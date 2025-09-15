@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", tag = "0.3.3", package = "halo2curves", features = ["derive_serde"] }
+halo2_curves = { git = "https://github.com/privacy-scaling-explorations/halo2curves", rev = "b753a832e92d5c86c5c997327a9cf9de86a18851", package = "halo2curves", features = [
+    "derive_serde",
+] }
 pasta_curves = { version = "0.5.0", features = ["serde"] }
 generic-array = { version = "0.14.7", features = ["serde"] }
 bitvec = "1.0.1"
@@ -24,7 +26,7 @@ ark-std = { version = "^0.4.0", default-features = false, optional = true }
 rayon = { version = "1.5.3", optional = true }
 
 # frontend-halo2
-halo2_proofs = { git = "https://github.com/han0110/halo2.git", branch = "feature/for-benchmark", optional = true }
+halo2_proofs = { git = "https://github.com/DoHoonKim8/halo2", rev = "e7333cd9b097abb5a03af7e50b997daf11f55370", optional = true }
 
 [dev-dependencies]
 paste = "1.0.11"

@@ -25,7 +25,11 @@ pub use halo2_curves::{
 };
 pub use msm::{fixed_base_msm, variable_base_msm, window_size, window_table, Msm};
 
-pub trait MultiMillerLoop: pairing::MultiMillerLoop + Debug + Sync {
+pub trait MultiMillerLoop: pairing::MultiMillerLoop + Debug + Sync
+where
+    Self::G1Affine: CurveAffine,
+    Self::G2Affine: CurveAffine,
+{
     fn pairings_product_is_identity(terms: &[(&Self::G1Affine, &Self::G2Prepared)]) -> bool {
         Self::multi_miller_loop(terms)
             .final_exponentiation()
@@ -34,7 +38,13 @@ pub trait MultiMillerLoop: pairing::MultiMillerLoop + Debug + Sync {
     }
 }
 
-impl<M> MultiMillerLoop for M where M: pairing::MultiMillerLoop + Debug + Sync {}
+impl<M> MultiMillerLoop for M
+where
+    M: pairing::MultiMillerLoop + Debug + Sync,
+    M::G1Affine: CurveAffine,
+    M::G2Affine: CurveAffine,
+{
+}
 
 pub trait TwoChainCurve: CurveAffine {
     type Secondary: TwoChainCurve<ScalarExt = Self::Base, Base = Self::ScalarExt, Secondary = Self>;

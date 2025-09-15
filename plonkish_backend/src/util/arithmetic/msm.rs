@@ -138,9 +138,9 @@ fn variable_base_msm_serial<C: CurveAffine>(
         fn add_assign(&mut self, rhs: &C) {
             *self = match *self {
                 CurveAcc::Empty => CurveAcc::Affine(*rhs),
-                CurveAcc::Affine(lhs) => CurveAcc::Projective(lhs + *rhs),
+                CurveAcc::Affine(lhs) => CurveAcc::Projective(lhs.to_curve() + rhs.to_curve()),
                 CurveAcc::Projective(mut lhs) => {
-                    lhs += *rhs;
+                    lhs += rhs.to_curve();
                     CurveAcc::Projective(lhs)
                 }
             }
@@ -150,7 +150,7 @@ fn variable_base_msm_serial<C: CurveAffine>(
             match self {
                 CurveAcc::Empty => rhs,
                 CurveAcc::Affine(lhs) => {
-                    rhs += lhs;
+                    rhs += lhs.to_curve();
                     rhs
                 }
                 CurveAcc::Projective(lhs) => lhs + rhs,

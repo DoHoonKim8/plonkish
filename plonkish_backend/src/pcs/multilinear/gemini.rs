@@ -19,26 +19,26 @@ use crate::{
     },
     Error,
 };
+use halo2_curves::CurveAffine;
 use rand::RngCore;
 use std::{marker::PhantomData, ops::Neg};
 
 #[derive(Clone, Debug)]
 pub struct Gemini<Pcs>(PhantomData<Pcs>);
 
-impl<M> PolynomialCommitmentScheme<M::Scalar> for Gemini<UnivariateKzg<M>>
+impl<M> PolynomialCommitmentScheme<M::Fr> for Gemini<UnivariateKzg<M>>
 where
     M: MultiMillerLoop,
-    M::Scalar: Serialize + DeserializeOwned,
-    M::G1Affine: Serialize + DeserializeOwned,
-    M::G2Affine: Serialize + DeserializeOwned,
+    M::Fr: Serialize + DeserializeOwned,
+    M::G1Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
 {
-    type Param = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::Param;
-    type ProverParam = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::ProverParam;
-    type VerifierParam = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::VerifierParam;
-    type Polynomial = MultilinearPolynomial<M::Scalar>;
-    type Commitment = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::Commitment;
-    type CommitmentChunk =
-        <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::CommitmentChunk;
+    type Param = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::Param;
+    type ProverParam = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::ProverParam;
+    type VerifierParam = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::VerifierParam;
+    type Polynomial = MultilinearPolynomial<M::Fr>;
+    type Commitment = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::Commitment;
+    type CommitmentChunk = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::CommitmentChunk;
 
     fn setup(poly_size: usize, batch_size: usize, rng: impl RngCore) -> Result<Self::Param, Error> {
         UnivariateKzg::<M>::setup(poly_size, batch_size, rng)
@@ -75,9 +75,9 @@ where
         pp: &Self::ProverParam,
         poly: &Self::Polynomial,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = point.len();
         if pp.degree() + 1 < poly.evals().len() {
@@ -104,7 +104,7 @@ where
                 let f_last = fs.last().unwrap();
                 let x_last = point.last().unwrap();
                 assert_eq!(
-                    f_last[0] * (M::Scalar::ONE - x_last) + f_last[1] * x_last,
+                    f_last[0] * (M::Fr::ONE - x_last) + f_last[1] * x_last,
                     *eval
                 );
             }
@@ -134,9 +134,9 @@ where
         pp: &Self::ProverParam,
         polys: impl IntoIterator<Item = &'a Self::Polynomial>,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error>
     where
         Self::Commitment: 'a,
@@ -150,7 +150,7 @@ where
     fn read_commitments(
         vp: &Self::VerifierParam,
         num_polys: usize,
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<Vec<Self::Commitment>, Error> {
         UnivariateKzg::read_commitments(vp, num_polys, transcript)
     }
@@ -158,9 +158,9 @@ where
     fn verify(
         vp: &Self::VerifierParam,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = point.len();
         let comms = chain![[comm.0], transcript.read_commitments(num_vars - 1)?]
@@ -172,7 +172,7 @@ where
 
         let evals = transcript.read_field_elements(num_vars)?;
 
-        let one = M::Scalar::ONE;
+        let one = M::Fr::ONE;
         let two = one.double();
         let eval_0 = evals.iter().zip(&squares_of_beta).zip(point).rev().fold(
             *eval,
@@ -193,9 +193,9 @@ where
     fn batch_verify<'a>(
         vp: &Self::VerifierParam,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = points.first().map(|point| point.len()).unwrap_or_default();
         let comms = comms.into_iter().collect_vec();

@@ -7,7 +7,7 @@ use crate::{
     util::{
         arithmetic::{
             batch_projective_to_affine, fixed_base_msm, variable_base_msm, window_size,
-            window_table, Curve, CurveAffine, Field, MultiMillerLoop, PrimeCurveAffine,
+            window_table, Curve, CurveAffine, Field, MultiMillerLoop,
         },
         chain, izip,
         parallel::parallelize,
@@ -16,21 +16,36 @@ use crate::{
     },
     Error,
 };
+use pasta_curves::group::prime::PrimeCurveAffine;
 use rand::RngCore;
 use std::{iter, marker::PhantomData, ops::Neg, slice};
 
 #[derive(Clone, Debug)]
-pub struct MultilinearKzg<M: MultiMillerLoop>(PhantomData<M>);
+pub struct MultilinearKzg<M>(PhantomData<M>)
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MultilinearKzgParam<M: MultiMillerLoop> {
+pub struct MultilinearKzgParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     g1: M::G1Affine,
     eqs: Vec<Vec<M::G1Affine>>,
     g2: M::G2Affine,
     ss: Vec<M::G2Affine>,
 }
 
-impl<M: MultiMillerLoop> MultilinearKzgParam<M> {
+impl<M> MultilinearKzgParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     pub fn num_vars(&self) -> usize {
         self.eqs.len()
     }
@@ -53,12 +68,22 @@ impl<M: MultiMillerLoop> MultilinearKzgParam<M> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MultilinearKzgProverParam<M: MultiMillerLoop> {
+pub struct MultilinearKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     g1: M::G1Affine,
     eqs: Vec<Vec<M::G1Affine>>,
 }
 
-impl<M: MultiMillerLoop> MultilinearKzgProverParam<M> {
+impl<M> MultilinearKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     pub fn num_vars(&self) -> usize {
         self.eqs.len() - 1
     }
@@ -77,13 +102,23 @@ impl<M: MultiMillerLoop> MultilinearKzgProverParam<M> {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MultilinearKzgVerifierParam<M: MultiMillerLoop> {
+pub struct MultilinearKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     g1: M::G1Affine,
     g2: M::G2Affine,
     ss: Vec<M::G2Affine>,
 }
 
-impl<M: MultiMillerLoop> MultilinearKzgVerifierParam<M> {
+impl<M> MultilinearKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     pub fn num_vars(&self) -> usize {
         self.ss.len()
     }
@@ -147,17 +182,17 @@ impl<C: CurveAffine> Additive<C::Scalar> for MultilinearKzgCommitment<C> {
     }
 }
 
-impl<M> PolynomialCommitmentScheme<M::Scalar> for MultilinearKzg<M>
+impl<M> PolynomialCommitmentScheme<M::Fr> for MultilinearKzg<M>
 where
     M: MultiMillerLoop,
-    M::Scalar: Serialize + DeserializeOwned,
-    M::G1Affine: Serialize + DeserializeOwned,
-    M::G2Affine: Serialize + DeserializeOwned,
+    M::Fr: Serialize + DeserializeOwned,
+    M::G1Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
 {
     type Param = MultilinearKzgParam<M>;
     type ProverParam = MultilinearKzgProverParam<M>;
     type VerifierParam = MultilinearKzgVerifierParam<M>;
-    type Polynomial = MultilinearPolynomial<M::Scalar>;
+    type Polynomial = MultilinearPolynomial<M::Fr>;
     type Commitment = MultilinearKzgCommitment<M::G1Affine>;
     type CommitmentChunk = M::G1Affine;
 
@@ -165,18 +200,18 @@ where
         assert!(poly_size.is_power_of_two());
 
         let num_vars = poly_size.ilog2() as usize;
-        let ss = iter::repeat_with(|| M::Scalar::random(&mut rng))
+        let ss = iter::repeat_with(|| M::Fr::random(&mut rng))
             .take(num_vars)
             .collect_vec();
 
-        let g1 = M::G1Affine::generator();
+        let g1 = <M::G1Affine as PrimeCurveAffine>::generator();
         let eqs = {
             let mut eqs = Vec::with_capacity(1 << (num_vars + 1));
-            eqs.push(vec![M::Scalar::ONE]);
+            eqs.push(vec![M::Fr::ONE]);
 
             for s_i in ss.iter() {
                 let last_evals = eqs.last().unwrap();
-                let mut evals = vec![M::Scalar::ZERO; 2 * last_evals.len()];
+                let mut evals = vec![M::Fr::ZERO; 2 * last_evals.len()];
 
                 let (evals_lo, evals_hi) = evals.split_at_mut(last_evals.len());
 
@@ -206,7 +241,7 @@ where
                 .collect_vec()
         };
 
-        let g2 = M::G2Affine::generator();
+        let g2 = <M::G2Affine as PrimeCurveAffine>::generator();
         let ss = {
             let window_size = window_size(num_vars);
             let window_table = window_table(window_size, M::G2Affine::generator());
@@ -266,9 +301,9 @@ where
         pp: &Self::ProverParam,
         poly: &Self::Polynomial,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptWrite<M::G1Affine, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptWrite<M::G1Affine, M::Fr>,
     ) -> Result<(), Error> {
         validate_input("open", pp.num_vars(), [poly], [point])?;
 
@@ -294,9 +329,9 @@ where
         pp: &Self::ProverParam,
         polys: impl IntoIterator<Item = &'a Self::Polynomial>,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptWrite<M::G1Affine, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptWrite<M::G1Affine, M::Fr>,
     ) -> Result<(), Error> {
         let polys = polys.into_iter().collect_vec();
         let comms = comms.into_iter().collect_vec();
@@ -306,7 +341,7 @@ where
     fn read_commitments(
         _: &Self::VerifierParam,
         num_polys: usize,
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<Vec<Self::Commitment>, Error> {
         transcript.read_commitments(num_polys).map(|comms| {
             comms
@@ -319,9 +354,9 @@ where
     fn verify(
         vp: &Self::VerifierParam,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptRead<M::G1Affine, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptRead<M::G1Affine, M::Fr>,
     ) -> Result<(), Error> {
         validate_input("verify", vp.num_vars(), [], [point])?;
 
@@ -352,9 +387,9 @@ where
     fn batch_verify<'a>(
         vp: &Self::VerifierParam,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptRead<M::G1Affine, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptRead<M::G1Affine, M::Fr>,
     ) -> Result<(), Error> {
         let comms = comms.into_iter().collect_vec();
         additive::batch_verify::<_, Self>(vp, vp.num_vars(), comms, points, evals, transcript)

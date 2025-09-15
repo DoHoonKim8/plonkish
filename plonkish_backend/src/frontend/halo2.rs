@@ -120,12 +120,16 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
                 lookup
                     .input_expressions()
                     .iter()
-                    .zip(lookup.table_expressions())
-                    .map(|(input, table)| {
-                        let [input, table] = [input, table].map(|expression| {
-                            convert_expression(cs, &advice_idx, challenge_idx, expression)
-                        });
-                        (input, table)
+                    .flat_map(|input| {
+                        input
+                            .iter()
+                            .zip(lookup.table_expressions())
+                            .map(|(input, table)| {
+                                let input = convert_expression(cs, &advice_idx, challenge_idx, input);
+                                let table = convert_expression(cs, &advice_idx, challenge_idx, table);
+                                (input, table)
+                            })
+                            .collect_vec()
                     })
                     .collect_vec()
             })
@@ -163,7 +167,7 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
             constraints,
             lookups,
             permutations,
-            max_degree: Some(cs.degree::<false>()),
+            max_degree: Some(cs.degree()),
         })
     }
 

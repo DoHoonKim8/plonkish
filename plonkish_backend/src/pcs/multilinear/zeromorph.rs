@@ -19,6 +19,7 @@ use crate::{
     },
     Error,
 };
+use halo2_curves::CurveAffine;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -30,12 +31,22 @@ pub struct Zeromorph<Pcs>(PhantomData<Pcs>);
     serialize = "M::G1Affine: Serialize",
     deserialize = "M::G1Affine: DeserializeOwned",
 ))]
-pub struct ZeromorphKzgProverParam<M: MultiMillerLoop> {
+pub struct ZeromorphKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     commit_pp: UnivariateKzgProverParam<M>,
     open_pp: UnivariateKzgProverParam<M>,
 }
 
-impl<M: MultiMillerLoop> ZeromorphKzgProverParam<M> {
+impl<M> ZeromorphKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     pub fn degree(&self) -> usize {
         self.commit_pp.degree()
     }
@@ -46,12 +57,22 @@ impl<M: MultiMillerLoop> ZeromorphKzgProverParam<M> {
     serialize = "M::G1Affine: Serialize, M::G2Affine: Serialize",
     deserialize = "M::G1Affine: DeserializeOwned, M::G2Affine: DeserializeOwned",
 ))]
-pub struct ZeromorphKzgVerifierParam<M: MultiMillerLoop> {
+pub struct ZeromorphKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     vp: UnivariateKzgVerifierParam<M>,
     s_offset_g2: M::G2Affine,
 }
 
-impl<M: MultiMillerLoop> ZeromorphKzgVerifierParam<M> {
+impl<M> ZeromorphKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr>,
+{
     pub fn g1(&self) -> M::G1Affine {
         self.vp.g1()
     }
@@ -65,20 +86,19 @@ impl<M: MultiMillerLoop> ZeromorphKzgVerifierParam<M> {
     }
 }
 
-impl<M> PolynomialCommitmentScheme<M::Scalar> for Zeromorph<UnivariateKzg<M>>
+impl<M> PolynomialCommitmentScheme<M::Fr> for Zeromorph<UnivariateKzg<M>>
 where
     M: MultiMillerLoop,
-    M::Scalar: Serialize + DeserializeOwned,
-    M::G1Affine: Serialize + DeserializeOwned,
-    M::G2Affine: Serialize + DeserializeOwned,
+    M::Fr: Serialize + DeserializeOwned,
+    M::G1Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
+    M::G2Affine: Serialize + DeserializeOwned + CurveAffine<ScalarExt = M::Fr>,
 {
-    type Param = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::Param;
+    type Param = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::Param;
     type ProverParam = ZeromorphKzgProverParam<M>;
     type VerifierParam = ZeromorphKzgVerifierParam<M>;
-    type Polynomial = MultilinearPolynomial<M::Scalar>;
-    type Commitment = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::Commitment;
-    type CommitmentChunk =
-        <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Scalar>>::CommitmentChunk;
+    type Polynomial = MultilinearPolynomial<M::Fr>;
+    type Commitment = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::Commitment;
+    type CommitmentChunk = <UnivariateKzg<M> as PolynomialCommitmentScheme<M::Fr>>::CommitmentChunk;
 
     fn setup(poly_size: usize, batch_size: usize, rng: impl RngCore) -> Result<Self::Param, Error> {
         assert!(poly_size.is_power_of_two());
@@ -130,9 +150,9 @@ where
         pp: &Self::ProverParam,
         poly: &Self::Polynomial,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = poly.num_vars();
         if pp.degree() + 1 < poly.evals().len() {
@@ -156,7 +176,7 @@ where
         let y = transcript.squeeze_challenge();
 
         let q_hat = {
-            let mut q_hat = vec![M::Scalar::ZERO; 1 << num_vars];
+            let mut q_hat = vec![M::Fr::ZERO; 1 << num_vars];
             for (idx, (power_of_y, q)) in izip!(powers(y), &quotients).enumerate() {
                 let offset = (1 << num_vars) - (1 << idx);
                 parallelize(&mut q_hat[offset..], |(q_hat, start)| {
@@ -180,23 +200,23 @@ where
         izip!(&quotients, &q_scalars).for_each(|(q, scalar)| f += (scalar, q));
 
         let comm = if cfg!(feature = "sanity-check") {
-            assert_eq!(f.evaluate(&x), M::Scalar::ZERO);
+            assert_eq!(f.evaluate(&x), M::Fr::ZERO);
 
             UnivariateKzg::commit_monomial(&pp.open_pp, f.coeffs())
         } else {
             Default::default()
         };
 
-        UnivariateKzg::<M>::open(&pp.open_pp, &f, &comm, &x, &M::Scalar::ZERO, transcript)
+        UnivariateKzg::<M>::open(&pp.open_pp, &f, &comm, &x, &M::Fr::ZERO, transcript)
     }
 
     fn batch_open<'a>(
         pp: &Self::ProverParam,
         polys: impl IntoIterator<Item = &'a Self::Polynomial>,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptWrite<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error>
     where
         Self::Commitment: 'a,
@@ -210,7 +230,7 @@ where
     fn read_commitments(
         vp: &Self::VerifierParam,
         num_polys: usize,
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<Vec<Self::Commitment>, Error> {
         UnivariateKzg::read_commitments(&vp.vp, num_polys, transcript)
     }
@@ -218,9 +238,9 @@ where
     fn verify(
         vp: &Self::VerifierParam,
         comm: &Self::Commitment,
-        point: &Point<M::Scalar, Self::Polynomial>,
-        eval: &M::Scalar,
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        point: &Point<M::Fr, Self::Polynomial>,
+        eval: &M::Fr,
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = point.len();
 
@@ -235,7 +255,7 @@ where
 
         let (eval_scalar, q_scalars) = eval_and_quotient_scalars(y, x, z, point);
 
-        let scalars = chain![[M::Scalar::ONE, z, eval_scalar * eval], q_scalars].collect_vec();
+        let scalars = chain![[M::Fr::ONE, z, eval_scalar * eval], q_scalars].collect_vec();
         let bases = chain![[q_hat_comm, comm.0, vp.g1()], q_comms].collect_vec();
         let c = variable_base_msm(&scalars, &bases).into();
 
@@ -252,9 +272,9 @@ where
     fn batch_verify<'a>(
         vp: &Self::VerifierParam,
         comms: impl IntoIterator<Item = &'a Self::Commitment>,
-        points: &[Point<M::Scalar, Self::Polynomial>],
-        evals: &[Evaluation<M::Scalar>],
-        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Scalar>,
+        points: &[Point<M::Fr, Self::Polynomial>],
+        evals: &[Evaluation<M::Fr>],
+        transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = points.first().map(|point| point.len()).unwrap_or_default();
         let comms = comms.into_iter().collect_vec();
