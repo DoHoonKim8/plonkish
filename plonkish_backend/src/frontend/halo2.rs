@@ -78,6 +78,37 @@ impl<F: Field, C: CircuitExt<F>> Halo2Circuit<F, C> {
         }
     }
 
+    pub fn new_with_params<E: WitnessEncoding>(
+        k: usize,
+        circuit: C,
+        circuit_params: C::Params,
+    ) -> Self {
+        let (cs, config) = {
+            let mut cs = ConstraintSystem::default();
+            let config = C::configure_with_params(&mut cs, circuit_params);
+            (cs, config)
+        };
+        let constants = cs.constants().clone();
+
+        let num_witness_polys = num_by_phase(&cs.advice_column_phase());
+        let advice_idx_in_phase = idx_in_phase(&cs.advice_column_phase());
+        let challenge_idx = idx_order_by_phase(&cs.challenge_phase(), 0);
+        let row_mapping = E::row_mapping(k);
+
+        Self {
+            k: k as u32,
+            instances: circuit.instances(),
+            circuit,
+            cs,
+            config,
+            constants,
+            num_witness_polys,
+            advice_idx_in_phase,
+            challenge_idx,
+            row_mapping,
+        }
+    }
+
     pub fn circuit(&self) -> &C {
         &self.circuit
     }

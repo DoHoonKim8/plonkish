@@ -56,6 +56,7 @@ mod vanilla_plonk {
     impl<F: Field> Circuit<F> for VanillaPlonk<F> {
         type Config = VanillaPlonkConfig;
         type FloorPlanner = SimpleFloorPlanner;
+        type Params = ();
 
         fn without_witnesses(&self) -> Self {
             unimplemented!()
