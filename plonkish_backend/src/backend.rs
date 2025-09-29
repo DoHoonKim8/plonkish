@@ -13,6 +13,7 @@ use rand::RngCore;
 use std::{collections::BTreeSet, fmt::Debug};
 
 pub mod hyperplonk;
+pub mod serde;
 pub mod unihyperplonk;
 
 pub trait PlonkishBackend<F: Field>: Clone + Debug {

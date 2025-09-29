@@ -16,6 +16,8 @@ use crate::{
     },
     Error,
 };
+use halo2_curves::serde::SerdeObject;
+use halo2_proofs::SerdeCurveAffine;
 use pasta_curves::group::prime::PrimeCurveAffine;
 use rand::RngCore;
 use std::{iter, marker::PhantomData, ops::Neg, slice};
@@ -138,6 +140,32 @@ where
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultilinearKzgCommitment<C: CurveAffine>(pub C);
+
+impl<C: SerdeCurveAffine> SerdeObject for MultilinearKzgCommitment<C> {
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.0.write_raw(writer)
+    }
+
+    fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        C::read_raw(reader).map(MultilinearKzgCommitment)
+    }
+
+    fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+        MultilinearKzgCommitment(C::read_raw_unchecked(reader))
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        C::from_raw_bytes(bytes).map(MultilinearKzgCommitment)
+    }
+
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        MultilinearKzgCommitment(C::from_raw_bytes_unchecked(bytes))
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        self.0.to_raw_bytes()
+    }
+}
 
 impl<C: CurveAffine> Default for MultilinearKzgCommitment<C> {
     fn default() -> Self {

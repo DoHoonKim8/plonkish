@@ -9,6 +9,7 @@ pub mod transcript;
 pub use itertools::{chain, izip, Either, Itertools};
 pub use num_bigint::BigUint;
 pub use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};
+pub use halo2_proofs::{SerdeFormat, SerdePrimeField, SerdeCurveAffine};
 pub use timer::{end_timer, start_timer, start_unit_timer};
 
 macro_rules! izip_eq {

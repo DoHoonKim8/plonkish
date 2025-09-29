@@ -158,8 +158,10 @@ impl<F: Field, C: Circuit<F>> PlonkishCircuit<F> for Halo2Circuit<F, C> {
                             .iter()
                             .zip(lookup.table_expressions())
                             .map(|(input, table)| {
-                                let input = convert_expression(cs, &advice_idx, challenge_idx, input);
-                                let table = convert_expression(cs, &advice_idx, challenge_idx, table);
+                                let input =
+                                    convert_expression(cs, &advice_idx, challenge_idx, input);
+                                let table =
+                                    convert_expression(cs, &advice_idx, challenge_idx, table);
                                 (input, table)
                             })
                             .collect_vec()

@@ -10,10 +10,12 @@ use crate::{
         BitIndex, Deserialize, Itertools, Serialize,
     },
 };
+use halo2_proofs::{SerdeFormat, SerdePrimeField};
 use num_integer::Integer;
 use rand::RngCore;
 use std::{
     borrow::{Borrow, Cow},
+    io,
     iter::{self, Sum},
     mem,
     ops::{Add, AddAssign, Mul, MulAssign, Sub, SubAssign},
@@ -28,6 +30,66 @@ pub struct MultilinearPolynomial<F> {
 impl<F> Default for MultilinearPolynomial<F> {
     fn default() -> Self {
         MultilinearPolynomial::zero()
+    }
+}
+
+pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField>(
+    slice: &[MultilinearPolynomial<F>],
+    writer: &mut W,
+    format: SerdeFormat,
+) -> io::Result<()> {
+    writer.write_all(&(slice.len() as u32).to_be_bytes())?;
+    for poly in slice.iter() {
+        poly.write(writer, format)?;
+    }
+    Ok(())
+}
+
+pub(crate) fn read_polynomial_vec<R: io::Read, F: SerdePrimeField>(
+    reader: &mut R,
+    format: SerdeFormat,
+) -> io::Result<Vec<MultilinearPolynomial<F>>> {
+    let mut len = [0u8; 4];
+    reader.read_exact(&mut len)?;
+    let len = u32::from_be_bytes(len);
+
+    let mut polys = Vec::with_capacity(len as usize);
+    for _ in 0..len {
+        polys.push(MultilinearPolynomial::read(reader, format)?);
+    }
+    Ok(polys)
+}
+
+impl<F: SerdePrimeField> MultilinearPolynomial<F> {
+    pub(crate) fn write<W: io::Write>(
+        &self,
+        writer: &mut W,
+        format: SerdeFormat,
+    ) -> io::Result<()> {
+        writer.write_all(&(self.num_vars as u32).to_be_bytes())?;
+        writer.write_all(&(self.evals.len() as u32).to_be_bytes())?;
+        for eval in &self.evals {
+            eval.write(writer, format)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn read<W: io::Read>(reader: &mut W, format: SerdeFormat) -> io::Result<Self> {
+        let mut num_vars = [0u8; 4];
+        reader.read_exact(&mut num_vars)?;
+        let num_vars = u32::from_be_bytes(num_vars) as usize;
+
+        let mut len = [0u8; 4];
+        reader.read_exact(&mut len)?;
+        let len = u32::from_be_bytes(len) as usize;
+        assert_eq!(len, 1 << num_vars);
+
+        let mut evals = vec![F::ZERO; len];
+        for eval in evals.iter_mut() {
+            *eval = F::read(reader, format)?;
+        }
+
+        Ok(Self { evals, num_vars })
     }
 }
 

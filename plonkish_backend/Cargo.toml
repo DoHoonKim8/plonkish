@@ -26,7 +26,7 @@ ark-std = { version = "^0.4.0", default-features = false, optional = true }
 rayon = { version = "1.5.3", optional = true }
 
 # frontend-halo2
-halo2_proofs = { git = "https://github.com/DoHoonKim8/halo2", rev = "e7333cd9b097abb5a03af7e50b997daf11f55370", optional = true, features = [
+halo2_proofs = { git = "https://github.com/DoHoonKim8/halo2", rev = "9f3ad0fe131da0bb9dfffd7a600dad0b2513ec41", optional = true, features = [
     "circuit-params"
 ] }
 

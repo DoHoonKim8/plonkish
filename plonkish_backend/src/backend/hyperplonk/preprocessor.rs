@@ -251,6 +251,7 @@ pub(crate) fn permutation_constraints<F: PrimeField>(
     (num_chunks, constraints)
 }
 
+// computes sigma polynomials
 pub(crate) fn permutation_polys<F: PrimeField>(
     num_vars: usize,
     permutation_polys: &[usize],

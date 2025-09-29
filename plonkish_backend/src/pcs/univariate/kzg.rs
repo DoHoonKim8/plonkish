@@ -15,6 +15,8 @@ use crate::{
     },
     Error,
 };
+use halo2_curves::serde::SerdeObject;
+use halo2_proofs::SerdeCurveAffine;
 use pasta_curves::group::prime::PrimeCurveAffine;
 use rand::RngCore;
 use std::{marker::PhantomData, ops::Neg, slice};
@@ -185,6 +187,33 @@ where
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnivariateKzgCommitment<C: CurveAffine>(pub C);
+
+impl<C: SerdeCurveAffine> SerdeObject for UnivariateKzgCommitment<C> {
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        C::from_raw_bytes(bytes).map(UnivariateKzgCommitment)
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        self.0.to_raw_bytes()
+    }
+
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        UnivariateKzgCommitment(C::from_raw_bytes_unchecked(bytes))
+    }
+
+    fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let c = C::read_raw(reader)?;
+        Ok(UnivariateKzgCommitment(c))
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.0.write_raw(writer)
+    }
+
+    fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+        UnivariateKzgCommitment(C::read_raw_unchecked(reader))
+    }
+}
 
 impl<C: CurveAffine> Default for UnivariateKzgCommitment<C> {
     fn default() -> Self {
