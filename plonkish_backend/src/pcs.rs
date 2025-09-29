@@ -7,8 +7,6 @@ use crate::{
     },
     Error,
 };
-use halo2_curves::CurveAffine;
-use halo2_proofs::SerdeCurveAffine;
 use rand::RngCore;
 use std::fmt::Debug;
 

@@ -5,10 +5,9 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
     backend::{
-        hyperplonk::{preprocessor::compose, HyperPlonk, HyperPlonkProverParam, HyperPlonkVerifierParam},
-        PlonkishCircuit,
+        hyperplonk::{HyperPlonkProverParam, HyperPlonkVerifierParam},
     },
-    frontend::halo2::{CircuitExt, Halo2Circuit},
+    frontend::halo2::CircuitExt,
     pcs::PolynomialCommitmentScheme,
     poly::multilinear::{read_polynomial_vec, write_polynomial_slice, MultilinearPolynomial},
     util::{expression::Expression, SerdeFormat, SerdePrimeField},
@@ -368,40 +367,34 @@ where
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.to_vk().write(writer)
+        self.to_vk().write(writer)?;
+        // write num_lookups
+        writer.write_all(&(self.num_lookups as u32).to_le_bytes())?;
+        Ok(())
     }
 
     pub fn read<R: io::Read, ConcreteCircuit: CircuitExt<F>>(
         reader: &mut R,
-        circuit: ConcreteCircuit,
-        circuit_params: ConcreteCircuit::Params,
         pcs: Pcs::VerifierParam,
     ) -> io::Result<Self> {
         let vk = HyperPlonkVerifyingKey::<F, Pcs>::read(reader)?;
-
-        // re-generate circuit-specific information
-        let circuit = Halo2Circuit::new_with_params::<HyperPlonk<Pcs>>(
-            vk.num_vars,
-            circuit,
-            circuit_params,
-        );
-        let circuit_info = circuit.circuit_info().map_err(|e| {
-            io::Error::new(io::ErrorKind::Other, format!("circuit_info error: {e:?}"))
-        })?;
-
-        let (num_permutation_z_polys, expression) = compose(&circuit_info);
-
+        // read num_lookups
+        let num_lookups = {
+            let mut num_bytes = [0u8; 4];
+            reader.read_exact(&mut num_bytes)?;
+            u32::from_le_bytes(num_bytes) as usize
+        };
         Ok(Self {
             pcs,
             num_vars: vk.num_vars,
             preprocess_comms: vk.preprocess_comms,
             permutation_comms: vk.permutation_comms.clone(),
-            num_permutation_z_polys,
-            expression,
-            num_witness_polys: circuit_info.num_witness_polys,
-            num_instances: circuit_info.num_instances,
-            num_challenges: circuit_info.num_challenges,
-            num_lookups: circuit_info.lookups.len(),
+            num_permutation_z_polys: vk.num_permutation_z_polys,
+            expression: vk.expression.clone(),
+            num_witness_polys: vk.num_witness_polys,
+            num_instances: vk.num_instances,
+            num_challenges: vk.num_challenges,
+            num_lookups,
         })
     }
 
