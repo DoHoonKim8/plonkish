@@ -7,7 +7,6 @@ use crate::{
     backend::{
         hyperplonk::{HyperPlonkProverParam, HyperPlonkVerifierParam},
     },
-    frontend::halo2::CircuitExt,
     pcs::PolynomialCommitmentScheme,
     poly::multilinear::{read_polynomial_vec, write_polynomial_slice, MultilinearPolynomial},
     util::{expression::Expression, SerdeFormat, SerdePrimeField},
@@ -396,7 +395,7 @@ where
         Ok(())
     }
 
-    pub fn read<R: io::Read, ConcreteCircuit: CircuitExt<F>>(
+    pub fn read<R: io::Read>(
         reader: &mut R,
         pcs: Pcs::VerifierParam,
     ) -> io::Result<Self> {
