@@ -34,8 +34,13 @@ fn read_expression<R: io::Read, F: Serialize + DeserializeOwned>(reader: &mut R)
     Ok(expression)
 }
 
+pub trait SerdeParam: Sized + Clone {
+    fn write_param<W: io::Write>(&self, writer: &mut W) -> io::Result<()>;
+    fn read_param<R: io::Read>(reader: &mut R) -> io::Result<Self>;
+}
+
 #[derive(Clone, Debug)]
-pub(crate) struct HyperPlonkProvingKey<F, Pcs>
+pub struct HyperPlonkProvingKey<F, Pcs>
 where
     F: PrimeField,
     Pcs: PolynomialCommitmentScheme<F>,
@@ -95,6 +100,7 @@ where
     F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
+    Pcs::ProverParam: SerdeParam,
 {
     fn to_pk(&self) -> HyperPlonkProvingKey<F, Pcs> {
         let permutation_polys_indices = self
@@ -121,6 +127,14 @@ where
             preprocess_polys: self.preprocess_polys.clone(),
             permutation_polys: self.permutation_polys.clone(),
         }
+    }
+
+    pub fn write_pcs_param<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.pcs.write_param(writer)
+    }
+
+    pub fn read_pcs_param<R: io::Read>(reader: &mut R) -> io::Result<Pcs::ProverParam> {
+        Pcs::ProverParam::read_param(reader)
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
@@ -352,6 +366,7 @@ where
     F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
+    Pcs::VerifierParam: SerdeParam,
 {
     fn to_vk(&self) -> HyperPlonkVerifyingKey<F, Pcs> {
         HyperPlonkVerifyingKey {
@@ -364,6 +379,14 @@ where
             num_permutation_z_polys: self.num_permutation_z_polys,
             expression: self.expression.clone(),
         }
+    }
+
+    pub fn write_pcs_param<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.pcs.write_param(writer)
+    }
+
+    pub fn read_pcs_param<R: io::Read>(reader: &mut R) -> io::Result<Pcs::VerifierParam> {
+        Pcs::VerifierParam::read_param(reader)
     }
 
     pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {

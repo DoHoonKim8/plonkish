@@ -1,10 +1,8 @@
 use crate::{
-    pcs::{
+    backend::serde::SerdeParam, pcs::{
         multilinear::{additive, err_too_many_variates, quotients, validate_input},
         Additive, Evaluation, Point, PolynomialCommitmentScheme,
-    },
-    poly::multilinear::MultilinearPolynomial,
-    util::{
+    }, poly::multilinear::MultilinearPolynomial, util::{
         arithmetic::{
             batch_projective_to_affine, fixed_base_msm, variable_base_msm, window_size,
             window_table, Curve, CurveAffine, Field, MultiMillerLoop,
@@ -13,8 +11,7 @@ use crate::{
         parallel::parallelize,
         transcript::{TranscriptRead, TranscriptWrite},
         Deserialize, DeserializeOwned, Itertools, Serialize,
-    },
-    Error,
+    }, Error
 };
 use halo2_curves::serde::SerdeObject;
 use halo2_proofs::SerdeCurveAffine;
@@ -103,6 +100,43 @@ where
     }
 }
 
+impl<M> SerdeParam for MultilinearKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.g1.write_raw(writer)?;
+        writer.write_all(&(self.eqs.len() as u32).to_le_bytes())?;
+        for eq in &self.eqs {
+            writer.write_all(&(eq.len() as u32).to_le_bytes())?;
+            for g1 in eq {
+                g1.write_raw(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let g1 = M::G1Affine::read_raw(reader)?;
+        let mut len_bytes = [0u8; 4];
+        reader.read_exact(&mut len_bytes)?;
+        let num_eqs = u32::from_le_bytes(len_bytes) as usize;
+        let mut eqs = Vec::with_capacity(num_eqs);
+        for _ in 0..num_eqs {
+            reader.read_exact(&mut len_bytes)?;
+            let eq_len = u32::from_le_bytes(len_bytes) as usize;
+            let mut eq = Vec::with_capacity(eq_len);
+            for _ in 0..eq_len {
+                eq.push(M::G1Affine::read_raw(reader)?);
+            }
+            eqs.push(eq);
+        }
+        Ok(Self { g1, eqs })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultilinearKzgVerifierParam<M>
 where
@@ -135,6 +169,36 @@ where
 
     pub fn ss(&self, num_vars: usize) -> &[M::G2Affine] {
         &self.ss[..num_vars]
+    }
+}
+
+impl<M> SerdeParam for MultilinearKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.g1.write_raw(writer)?;
+        self.g2.write_raw(writer)?;
+        writer.write_all(&(self.ss.len() as u32).to_le_bytes())?;
+        for g2 in &self.ss {
+            g2.write_raw(writer)?;
+        }
+        Ok(())
+    }
+
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let g1 = M::G1Affine::read_raw(reader)?;
+        let g2 = M::G2Affine::read_raw(reader)?;
+        let mut len_bytes = [0u8; 4];
+        reader.read_exact(&mut len_bytes)?;
+        let ss_len = u32::from_le_bytes(len_bytes) as usize;
+        let mut ss = Vec::with_capacity(ss_len);
+        for _ in 0..ss_len {
+            ss.push(M::G2Affine::read_raw(reader)?);
+        }
+        Ok(Self { g1, g2, ss })
     }
 }
 
