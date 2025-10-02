@@ -1,10 +1,8 @@
 use crate::{
-    pcs::{
+    backend::serde::SerdeParam, pcs::{
         univariate::{additive, err_too_large_deree, monomial_g_to_lagrange_g, validate_input},
         Additive, Evaluation, Point, PolynomialCommitmentScheme,
-    },
-    poly::univariate::{UnivariateBasis::*, UnivariatePolynomial},
-    util::{
+    }, poly::univariate::{UnivariateBasis::*, UnivariatePolynomial}, util::{
         arithmetic::{
             batch_projective_to_affine, fixed_base_msm, powers, radix2_fft, root_of_unity_inv,
             variable_base_msm, window_size, window_table, Curve, CurveAffine, Field,
@@ -12,8 +10,7 @@ use crate::{
         },
         transcript::{TranscriptRead, TranscriptWrite},
         Deserialize, DeserializeOwned, Itertools, Serialize,
-    },
-    Error,
+    }, Error
 };
 use halo2_curves::serde::SerdeObject;
 use halo2_proofs::SerdeCurveAffine;
@@ -154,6 +151,56 @@ where
     }
 }
 
+impl<M> SerdeParam for UnivariateKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        let k_bytes = (self.k as u32).to_le_bytes();
+        writer.write_all(&k_bytes)?;
+        let len = self.monomial_g1.len() as u32;
+        writer.write_all(&len.to_le_bytes())?;
+        for g1 in &self.monomial_g1 {
+            g1.write_raw(writer)?;
+        }
+        let len = self.lagrange_g1.len() as u32;
+        writer.write_all(&len.to_le_bytes())?;
+        for g1 in &self.lagrange_g1 {
+            g1.write_raw(writer)?;
+        }
+        Ok(())
+    }
+
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut k_bytes = [0u8; 4];
+        reader.read_exact(&mut k_bytes)?;
+        let k = u32::from_le_bytes(k_bytes) as usize;
+
+        let mut len_bytes = [0u8; 4];
+        reader.read_exact(&mut len_bytes)?;
+        let monomial_len = u32::from_le_bytes(len_bytes) as usize;
+        let mut monomial_g1 = Vec::with_capacity(monomial_len);
+        for _ in 0..monomial_len {
+            monomial_g1.push(M::G1Affine::read_raw(reader)?);
+        }
+
+        reader.read_exact(&mut len_bytes)?;
+        let lagrange_len = u32::from_le_bytes(len_bytes) as usize;
+        let mut lagrange_g1 = Vec::with_capacity(lagrange_len);
+        for _ in 0..lagrange_len {
+            lagrange_g1.push(M::G1Affine::read_raw(reader)?);
+        }
+
+        Ok(Self {
+            k,
+            monomial_g1,
+            lagrange_g1,
+        })
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnivariateKzgVerifierParam<M>
 where
@@ -182,6 +229,27 @@ where
 
     pub fn s_g2(&self) -> M::G2Affine {
         self.s_g2
+    }
+}
+
+impl<M> SerdeParam for UnivariateKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.g1.write_raw(writer)?;
+        self.g2.write_raw(writer)?;
+        self.s_g2.write_raw(writer)?;
+        Ok(())
+    }
+
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let g1 = M::G1Affine::read_raw(reader)?;
+        let g2 = M::G2Affine::read_raw(reader)?;
+        let s_g2 = M::G2Affine::read_raw(reader)?;
+        Ok(Self { g1, g2, s_g2 })
     }
 }
 

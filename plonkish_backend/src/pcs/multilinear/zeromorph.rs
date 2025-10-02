@@ -1,14 +1,12 @@
 use crate::{
-    pcs::{
+    backend::serde::SerdeParam, pcs::{
         multilinear::{additive, quotients},
         univariate::{
             err_too_large_deree, UnivariateKzg, UnivariateKzgProverParam,
             UnivariateKzgVerifierParam,
         },
         Evaluation, Point, PolynomialCommitmentScheme,
-    },
-    poly::{multilinear::MultilinearPolynomial, univariate::UnivariatePolynomial},
-    util::{
+    }, poly::{multilinear::MultilinearPolynomial, univariate::UnivariatePolynomial}, util::{
         arithmetic::{
             powers, squares, variable_base_msm, BatchInvert, Curve, Field, MultiMillerLoop,
         },
@@ -16,10 +14,10 @@ use crate::{
         parallel::parallelize,
         transcript::{TranscriptRead, TranscriptWrite},
         Deserialize, DeserializeOwned, Itertools, Serialize,
-    },
-    Error,
+    }, Error
 };
-use halo2_curves::CurveAffine;
+use halo2_curves::{serde::SerdeObject, CurveAffine};
+use halo2_proofs::SerdeCurveAffine;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -49,6 +47,23 @@ where
 {
     pub fn degree(&self) -> usize {
         self.commit_pp.degree()
+    }
+}
+
+impl<M> SerdeParam for ZeromorphKzgProverParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.commit_pp.write_param(writer)?;
+        self.open_pp.write_param(writer)
+    }
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let commit_pp = UnivariateKzgProverParam::read_param(reader)?;
+        let open_pp = UnivariateKzgProverParam::read_param(reader)?;
+        Ok(Self { commit_pp, open_pp })
     }
 }
 
@@ -83,6 +98,24 @@ where
 
     pub fn s_g2(&self) -> M::G2Affine {
         self.vp.s_g2()
+    }
+}
+
+impl<M> SerdeParam for ZeromorphKzgVerifierParam<M>
+where
+    M: MultiMillerLoop,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+{
+    fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.vp.write_param(writer)?;
+        self.s_offset_g2.write_raw(writer)
+    }
+
+    fn read_param<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let vp = UnivariateKzgVerifierParam::read_param(reader)?;
+        let s_offset_g2 = M::G2Affine::read_raw(reader)?;
+        Ok(Self { vp, s_offset_g2 })
     }
 }
 
