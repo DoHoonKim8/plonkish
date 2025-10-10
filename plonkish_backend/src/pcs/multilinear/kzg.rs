@@ -1,8 +1,11 @@
 use crate::{
-    backend::serde::SerdeParam, pcs::{
+    backend::serde::SerdeParam,
+    pcs::{
         multilinear::{additive, err_too_many_variates, quotients, validate_input},
         Additive, Evaluation, Point, PolynomialCommitmentScheme,
-    }, poly::multilinear::MultilinearPolynomial, util::{
+    },
+    poly::multilinear::MultilinearPolynomial,
+    util::{
         arithmetic::{
             batch_projective_to_affine, fixed_base_msm, variable_base_msm, window_size,
             window_table, Curve, CurveAffine, Field, MultiMillerLoop,
@@ -11,7 +14,8 @@ use crate::{
         parallel::parallelize,
         transcript::{TranscriptRead, TranscriptWrite},
         Deserialize, DeserializeOwned, Itertools, Serialize,
-    }, Error
+    },
+    Error,
 };
 use halo2_curves::serde::SerdeObject;
 use halo2_proofs::SerdeCurveAffine;

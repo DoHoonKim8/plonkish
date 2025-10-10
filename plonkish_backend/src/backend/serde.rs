@@ -1,18 +1,22 @@
 use std::io;
 
-use halo2_curves::{ff::{FromUniformBytes, PrimeField}, serde::SerdeObject};
+use halo2_curves::{
+    ff::{FromUniformBytes, PrimeField},
+    serde::SerdeObject,
+};
 use serde::{de::DeserializeOwned, Serialize};
 
 use crate::{
-    backend::{
-        hyperplonk::{HyperPlonkProverParam, HyperPlonkVerifierParam},
-    },
+    backend::hyperplonk::{HyperPlonkProverParam, HyperPlonkVerifierParam},
     pcs::PolynomialCommitmentScheme,
     poly::multilinear::{read_polynomial_vec, write_polynomial_slice, MultilinearPolynomial},
     util::{expression::Expression, SerdeFormat, SerdePrimeField},
 };
 
-fn write_expression<W: io::Write, F: Serialize + DeserializeOwned>(writer: &mut W, expression: &Expression<F>) -> io::Result<()> {
+fn write_expression<W: io::Write, F: Serialize + DeserializeOwned>(
+    writer: &mut W,
+    expression: &Expression<F>,
+) -> io::Result<()> {
     // Serialize the expression to bytes
     let expr_bytes = bincode::serialize(expression)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
@@ -22,7 +26,9 @@ fn write_expression<W: io::Write, F: Serialize + DeserializeOwned>(writer: &mut 
     Ok(())
 }
 
-fn read_expression<R: io::Read, F: Serialize + DeserializeOwned>(reader: &mut R) -> io::Result<Expression<F>> {
+fn read_expression<R: io::Read, F: Serialize + DeserializeOwned>(
+    reader: &mut R,
+) -> io::Result<Expression<F>> {
     let mut len_bytes = [0u8; 4];
     reader.read_exact(&mut len_bytes)?;
     let expr_len = u32::from_le_bytes(len_bytes) as usize;
@@ -151,10 +157,7 @@ where
         Ok(())
     }
 
-    pub fn read<R: io::Read>(
-        reader: &mut R,
-        pcs: Pcs::ProverParam,
-    ) -> io::Result<Self> {
+    pub fn read<R: io::Read>(reader: &mut R, pcs: Pcs::ProverParam) -> io::Result<Self> {
         let pk = HyperPlonkProvingKey::<F, Pcs>::read(reader)?;
 
         let lookups = {
@@ -395,10 +398,7 @@ where
         Ok(())
     }
 
-    pub fn read<R: io::Read>(
-        reader: &mut R,
-        pcs: Pcs::VerifierParam,
-    ) -> io::Result<Self> {
+    pub fn read<R: io::Read>(reader: &mut R, pcs: Pcs::VerifierParam) -> io::Result<Self> {
         let vk = HyperPlonkVerifyingKey::<F, Pcs>::read(reader)?;
         // read num_lookups
         let num_lookups = {
@@ -432,21 +432,13 @@ mod tests {
     use super::*;
     use crate::{
         backend::{
-            hyperplonk::{
-                util::rand_vanilla_plonk_circuit,
-                HyperPlonk,
-            },
+            hyperplonk::{util::rand_vanilla_plonk_circuit, HyperPlonk},
             PlonkishBackend,
         },
         pcs::multilinear::MultilinearKzg,
-        util::{
-            expression::rotate::BinaryField,
-            test::seeded_std_rng,
-        },
+        util::{expression::rotate::BinaryField, test::seeded_std_rng},
     };
     use halo2_curves::bn256::{Bn256, Fr};
-
-
 
     type TestPcs = MultilinearKzg<Bn256>;
     type TestBackend = HyperPlonk<TestPcs>;
@@ -456,44 +448,82 @@ mod tests {
         let num_vars = 4;
         let mut rng = seeded_std_rng();
         // Create a test circuit and get circuit info
-        let (circuit_info, _) = rand_vanilla_plonk_circuit::<Fr, BinaryField>(num_vars, seeded_std_rng(), seeded_std_rng());
+        let (circuit_info, _) = rand_vanilla_plonk_circuit::<Fr, BinaryField>(
+            num_vars,
+            seeded_std_rng(),
+            seeded_std_rng(),
+        );
 
         // Setup PCS parameters
         let pcs_param = TestBackend::setup(&circuit_info, &mut rng).unwrap();
         // Generate prover and verifier parameters
-        let (prover_param, _verifier_param): (HyperPlonkProverParam<Fr, TestPcs>, HyperPlonkVerifierParam<Fr, TestPcs>) = TestBackend::preprocess(&pcs_param, &circuit_info).unwrap();
+        let (prover_param, _verifier_param): (
+            HyperPlonkProverParam<Fr, TestPcs>,
+            HyperPlonkVerifierParam<Fr, TestPcs>,
+        ) = TestBackend::preprocess(&pcs_param, &circuit_info).unwrap();
 
         // Test serialization roundtrip
         let mut buffer = Vec::new();
-        prover_param.write(&mut buffer).expect("Failed to write prover param");
+        prover_param
+            .write(&mut buffer)
+            .expect("Failed to write prover param");
 
         let mut cursor = Cursor::new(&buffer);
-        let deserialized_param: HyperPlonkProverParam<Fr, TestPcs> = HyperPlonkProverParam::read(
-            &mut cursor,
-            prover_param.pcs.clone()
-        ).expect("Failed to read prover param");
+        let deserialized_param: HyperPlonkProverParam<Fr, TestPcs> =
+            HyperPlonkProverParam::read(&mut cursor, prover_param.pcs.clone())
+                .expect("Failed to read prover param");
         // Verify all fields are identical
         assert_eq!(prover_param.num_vars, deserialized_param.num_vars);
         assert_eq!(prover_param.num_instances, deserialized_param.num_instances);
-        assert_eq!(prover_param.num_witness_polys, deserialized_param.num_witness_polys);
-        assert_eq!(prover_param.num_challenges, deserialized_param.num_challenges);
+        assert_eq!(
+            prover_param.num_witness_polys,
+            deserialized_param.num_witness_polys
+        );
+        assert_eq!(
+            prover_param.num_challenges,
+            deserialized_param.num_challenges
+        );
         assert_eq!(prover_param.lookups, deserialized_param.lookups);
-        assert_eq!(prover_param.num_permutation_z_polys, deserialized_param.num_permutation_z_polys);
+        assert_eq!(
+            prover_param.num_permutation_z_polys,
+            deserialized_param.num_permutation_z_polys
+        );
         // Verify expression serialization
         assert_eq!(prover_param.expression, deserialized_param.expression);
         // Verify polynomial data
-        assert_eq!(prover_param.preprocess_polys.len(), deserialized_param.preprocess_polys.len());
-        for (orig, deser) in prover_param.preprocess_polys.iter().zip(deserialized_param.preprocess_polys.iter()) {
+        assert_eq!(
+            prover_param.preprocess_polys.len(),
+            deserialized_param.preprocess_polys.len()
+        );
+        for (orig, deser) in prover_param
+            .preprocess_polys
+            .iter()
+            .zip(deserialized_param.preprocess_polys.iter())
+        {
             assert_eq!(orig, deser, "Preprocess polynomial mismatch");
         }
-        assert_eq!(prover_param.permutation_polys.len(), deserialized_param.permutation_polys.len());
-        for (orig, deser) in prover_param.permutation_polys.iter().zip(deserialized_param.permutation_polys.iter()) {
+        assert_eq!(
+            prover_param.permutation_polys.len(),
+            deserialized_param.permutation_polys.len()
+        );
+        for (orig, deser) in prover_param
+            .permutation_polys
+            .iter()
+            .zip(deserialized_param.permutation_polys.iter())
+        {
             assert_eq!(orig.0, deser.0, "Permutation polynomial index mismatch");
             assert_eq!(orig.1, deser.1, "Permutation polynomial data mismatch");
         }
         // Verify commitment data
-        assert_eq!(prover_param.preprocess_comms.len(), deserialized_param.preprocess_comms.len());
-        for (orig, deser) in prover_param.preprocess_comms.iter().zip(deserialized_param.preprocess_comms.iter()) {
+        assert_eq!(
+            prover_param.preprocess_comms.len(),
+            deserialized_param.preprocess_comms.len()
+        );
+        for (orig, deser) in prover_param
+            .preprocess_comms
+            .iter()
+            .zip(deserialized_param.preprocess_comms.iter())
+        {
             // Note: We can't directly compare commitments as they might have different internal representations
             // but we can verify they serialize to the same bytes
             let orig_bytes = {
@@ -508,9 +538,16 @@ mod tests {
             };
             assert_eq!(orig_bytes, deser_bytes, "Preprocess commitment mismatch");
         }
-        
-        assert_eq!(prover_param.permutation_comms.len(), deserialized_param.permutation_comms.len());
-        for (orig, deser) in prover_param.permutation_comms.iter().zip(deserialized_param.permutation_comms.iter()) {
+
+        assert_eq!(
+            prover_param.permutation_comms.len(),
+            deserialized_param.permutation_comms.len()
+        );
+        for (orig, deser) in prover_param
+            .permutation_comms
+            .iter()
+            .zip(deserialized_param.permutation_comms.iter())
+        {
             let orig_bytes = {
                 let mut buf = Vec::new();
                 orig.write_raw(&mut buf).unwrap();

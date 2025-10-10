@@ -179,6 +179,7 @@ impl<F: Field> Polynomial<F> for MultilinearPolynomial<F> {
 }
 
 impl<F: Field> MultilinearPolynomial<F> {
+    /// ˜eq(i, y) for i = 0, ... , 2^n − 1
     pub fn eq_xy(y: &[F]) -> Self {
         if y.is_empty() {
             return Self::zero();
@@ -696,18 +697,20 @@ pub(crate) fn merge_into<F: Field>(
     target: &mut Vec<F>,
     evals: &[F],
     x_i: &F,
-    distance: usize,
-    skip: usize,
+    distance: usize, // 1
+    skip: usize,     // 0
 ) {
     assert!(target.capacity() >= evals.len() >> distance);
     target.resize(evals.len() >> distance, F::ZERO);
 
+    // Folding factor
     let step = 1 << distance;
     parallelize(target, |(target, start)| {
         let start = (start << distance) + skip;
         for (target, (eval_0, eval_1)) in
             target.iter_mut().zip(zip_self!(evals.iter(), step, start))
         {
+            // x_i * eval_1 + (1 - x_i) * eval_0
             *target = (*eval_1 - eval_0) * x_i + eval_0;
         }
     });

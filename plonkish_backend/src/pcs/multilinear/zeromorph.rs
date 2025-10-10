@@ -1,12 +1,15 @@
 use crate::{
-    backend::serde::SerdeParam, pcs::{
+    backend::serde::SerdeParam,
+    pcs::{
         multilinear::{additive, quotients},
         univariate::{
             err_too_large_deree, UnivariateKzg, UnivariateKzgProverParam,
             UnivariateKzgVerifierParam,
         },
         Evaluation, Point, PolynomialCommitmentScheme,
-    }, poly::{multilinear::MultilinearPolynomial, univariate::UnivariatePolynomial}, util::{
+    },
+    poly::{multilinear::MultilinearPolynomial, univariate::UnivariatePolynomial},
+    util::{
         arithmetic::{
             powers, squares, variable_base_msm, BatchInvert, Curve, Field, MultiMillerLoop,
         },
@@ -14,7 +17,8 @@ use crate::{
         parallel::parallelize,
         transcript::{TranscriptRead, TranscriptWrite},
         Deserialize, DeserializeOwned, Itertools, Serialize,
-    }, Error
+    },
+    Error,
 };
 use halo2_curves::{serde::SerdeObject, CurveAffine};
 use halo2_proofs::SerdeCurveAffine;
