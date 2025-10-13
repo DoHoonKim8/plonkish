@@ -109,6 +109,9 @@ where
             h
         };
 
+        // Commit to `h(X)`
+        let h_comm = UnivariateKzg::commit_and_write(pp, &h, transcript)?;
+
         // Compute `g(X) = f(X) (mod (X^b - \alpha))`
         let alpha = transcript.squeeze_challenge();
         let f_is = {
@@ -139,19 +142,20 @@ where
             (g, q)
         };
 
-        // Commit to `h(X)`, `g(X)`, and `q(X)`
-        UnivariateKzg::<M>::batch_commit_and_write(pp, vec![&h, &g, &q], transcript)?;
+        // Commit to `g(X)`, and `q(X)`
+        let comms = UnivariateKzg::<M>::batch_commit_and_write(pp, vec![&g, &q], transcript)?;
+        let [g_comm, q_comm] = comms.try_into().unwrap();
 
         let gamma = transcript.squeeze_challenge();
 
         // IPA polynomial for `˜g(u_1), ˜h(u_2)`
         // X^{b-1} • (
-        //      g(X) • P_{u_1}(1/X) + g(1/X) • P_{u_1}(X) +
-        //      \gamma • (h(X) • P_{u_2}(1/X) + h(1/X) • P_{u_2}(X))
+        //      g(X) • P_{u_1}(1 / X) + g(1 / X) • P_{u_1}(X) +
+        //      \gamma • (h(X) • P_{u_2}(1 / X) + h(1 / X) • P_{u_2}(X))
         // )
         let mut batched_ipa_poly = {
             let omega = root_of_unity(2 * b);
-            // X^{b-1} • ( g(X) • P_{u_1}(1/X) + g(1/X) • P_{u_1}(X) )
+            // X^{b-1} • ( g(X) • P_{u_1}(1 / X) + g(1 / X) • P_{u_1}(X) )
             let mut lhs = {
                 // g(X) • ( X^{b-1} • P_{u_1}(1 / X) ) + ( X^{b-1} • g(1 / X) ) • P_{u_1}(X)
                 let p_u1 = MultilinearPolynomial::eq_xy(&point[..t]).into_evals();
@@ -204,9 +208,9 @@ where
                     .collect_vec();
 
                 // fft ( X^{b-1} • h(1 / X) )
-                let mut h_evals = h.coeffs().to_vec();
-                h_evals.resize(b, M::Fr::ZERO);
-                let mut h_inv_evals = h_evals.iter().rev().copied().collect_vec();
+                let mut h = h.coeffs().to_vec();
+                h.resize(b, M::Fr::ZERO);
+                let mut h_inv_evals = h.iter().rev().copied().collect_vec();
                 h_inv_evals.resize(2 * b, M::Fr::ZERO);
                 radix2_fft(&mut h_inv_evals, omega, t + 1);
                 // fft ( P_{u_2}(X) )
@@ -228,7 +232,7 @@ where
             lhs
         };
 
-        // `batched_ipa_poly` = X^{b-1} • (2(˜g(u_1) + ˜h(u_2)) + X • s(X) + (1 / X) • s(1 / X))
+        // `batched_ipa_poly` = X^{b-1} • (2(˜g(u_1) + \gamma • ˜h(u_2)) + X • s(X) + (1 / X) • s(1 / X))
         let s = {
             // size `2b` ifft for `batched_ipa_poly`
             let omega_inv = root_of_unity_inv(t + 1);
@@ -246,11 +250,49 @@ where
             UnivariatePolynomial::monomial(d_coeffs)
         };
 
+        // Commit to `s(X)`, and `d(X)`
+        let comms = UnivariateKzg::<M>::batch_commit_and_write(pp, vec![&s, &d], transcript)?;
+        let [s_comm, d_comm] = comms.try_into().unwrap();
+
         let zeta = transcript.squeeze_challenge();
+        let zeta_inv = zeta.invert().unwrap();
 
+        let polys = vec![&g, &h, &s, &d];
+        let comms = vec![&g_comm, &h_comm, &s_comm, &d_comm];
+        let points = vec![zeta.clone(), zeta_inv.clone(), alpha.clone()];
+        let evals = vec![
+            Evaluation::new(0, 0, g.evaluate(&zeta)),     // g(ζ)
+            Evaluation::new(0, 1, g.evaluate(&zeta_inv)), // g(1/ζ)
+            Evaluation::new(1, 0, h.evaluate(&zeta)),     // h(ζ)
+            Evaluation::new(1, 1, h.evaluate(&zeta_inv)), // h(1/ζ)
+            Evaluation::new(2, 0, s.evaluate(&zeta)),     // s(ζ)
+            Evaluation::new(2, 1, s.evaluate(&zeta_inv)), // s(1/ζ)
+            Evaluation::new(3, 0, d.evaluate(&zeta)),     // d(ζ)
+            Evaluation::new(1, 2, h.evaluate(&alpha)),    // h(α)
+        ];
+        transcript.write_field_elements(evals[..5].iter().map(Evaluation::value))?;
 
+        // [H(x)]
+        let phi_zeta = {
+            let numerator = {
+                let zeta_pow = zeta.pow(&[b as u64]);
+                let g_zeta = evals[0].value().clone();
+                let mut acc = f.clone();
+                acc -= &q * &(zeta_pow - alpha);
+                acc -= (g_zeta, UnivariatePolynomial::monomial(vec![M::Fr::ONE]));
+                acc
+            };
+            let divisor = UnivariatePolynomial::monomial(vec![-zeta, M::Fr::ONE]); // (X - ζ)
+            let (quotient, remainder) = numerator.div_rem(&divisor);
+            assert!(remainder.is_empty());
+            UnivariateKzg::commit_monomial(pp, &quotient.coeffs())
+        };
 
-        todo!()
+        transcript.write_commitment(&phi_zeta.0)?;
+
+        UnivariateKzg::batch_open(pp, polys, comms, &points, &evals, transcript)?;
+
+        Ok(())
     }
 
     fn batch_open<'a>(
