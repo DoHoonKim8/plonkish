@@ -93,7 +93,7 @@ pub fn horner_univariate_div<F: Field>(coeffs: &[F], x: &F) -> Vec<F> {
     horners.into_iter().rev().collect()
 }
 
-pub fn transpose<F: Field>(matrix: &[Vec<F>]) -> Vec<Vec<F>> {
+pub fn transpose<F: Field>(matrix: &[&[F]]) -> Vec<Vec<F>> {
     if matrix.is_empty() {
         return vec![];
     }

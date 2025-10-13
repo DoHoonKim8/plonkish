@@ -12,17 +12,18 @@ use crate::{
     },
     util::{
         arithmetic::{
-            horner_univariate_div, radix2_fft, squares, transpose, Field, MultiMillerLoop,
+            horner_univariate_div, inner_product, radix2_fft, root_of_unity, root_of_unity_inv,
+            squares, transpose, Field, MultiMillerLoop,
         },
-        chain,
+        chain, izip_eq,
         transcript::{TranscriptRead, TranscriptWrite},
         DeserializeOwned, Itertools, Serialize,
     },
     Error,
 };
-use halo2_curves::CurveAffine;
+use halo2_curves::{ff::PrimeField, CurveAffine};
 use rand::RngCore;
-use std::{marker::PhantomData, ops::Neg};
+use std::{iter::once, marker::PhantomData, ops::Neg};
 
 #[derive(Clone, Debug)]
 pub struct Mercury<Pcs>(PhantomData<Pcs>);
@@ -93,83 +94,161 @@ where
 
         let t = num_vars >> 1 + 1;
         let b: usize = 1 << t; // Folding factor
-        let mut f = UnivariatePolynomial::monomial(poly.evals().to_vec());
+        let f = UnivariatePolynomial::monomial(poly.evals().to_vec());
 
         // Compute `h(X)`
         let h = {
+            let mut h = f.clone();
             for x_i in &point[..t] {
-                let f_i_minus_one = f.coeffs();
+                let f_i_minus_one = h.coeffs();
                 let mut f_i = Vec::with_capacity(f_i_minus_one.len() >> 1);
                 merge_into(&mut f_i, f_i_minus_one, x_i, 1, 0);
-                f = UnivariatePolynomial::monomial(f_i);
+                h = UnivariatePolynomial::monomial(f_i);
             }
 
-            f
+            h
         };
 
         // Compute `g(X) = f(X) (mod (X^b - \alpha))`
         let alpha = transcript.squeeze_challenge();
-        let fis = {
-            let mut fis = Vec::with_capacity(b);
-            for _ in 0..b {
-                fis.push(Vec::with_capacity(1 << (num_vars - t)));
-            }
-            f.coeffs().chunks(b).for_each(|chunk| {
-                chunk.iter().enumerate().for_each(|(i, coeff)| {
-                    fis[i].push(*coeff);
-                });
-            });
-            fis.into_iter()
+        let f_is = {
+            let f_is = transpose(&f.coeffs().chunks(b).collect_vec());
+            f_is.into_iter()
                 .map(|coeffs| UnivariatePolynomial::monomial(coeffs))
                 .collect_vec()
         };
         let (g, q) = {
             // f(X) = ∑ X^i • f_i(X^b)
             //      = ∑ X^i • ((X^b - \alpha) • q_i(X^b) + f_i(\alpha))
-            //      = (X^b - \alpha) • ∑ X^i • q_i(X^b) + ∑ X^i • f_i(\alpha)
-            //      = (X^b - \alpha) • q(X)             + g(X)
+            //      = (X^b - \alpha) • ∑ X^i • q_i(X^b)  + ∑ X^i • f_i(\alpha)
+            //      = (X^b - \alpha) • q(X)              + g(X)
             let mut g_coeffs = Vec::with_capacity(b);
-            for f_i in &fis {
+            for f_i in &f_is {
                 g_coeffs.push(f_i.evaluate(&alpha));
             }
             let g = UnivariatePolynomial::monomial(g_coeffs);
-            let mut qis = Vec::with_capacity(b);
-            for f_i in fis {
-                qis.push(horner_univariate_div(f_i.coeffs(), &alpha));
+            let mut q_is = Vec::with_capacity(b);
+            for f_i in f_is {
+                q_is.push(horner_univariate_div(f_i.coeffs(), &alpha));
             }
-            let q_coeffs = transpose(&qis).into_iter().flatten().collect_vec();
+            let q_coeffs = transpose(&q_is.iter().map(|q_i| q_i.as_slice()).collect_vec())
+                .into_iter()
+                .flatten()
+                .collect_vec();
             let q = UnivariatePolynomial::monomial(q_coeffs);
             (g, q)
         };
 
         // Commit to `h(X)`, `g(X)`, and `q(X)`
-        UnivariateKzg::<M>::batch_commit_and_write(pp, &[h, g, q], transcript)?;
+        UnivariateKzg::<M>::batch_commit_and_write(pp, vec![&h, &g, &q], transcript)?;
 
         let gamma = transcript.squeeze_challenge();
 
-        // IPA for `˜g(u_1), ˜h(u_2)`
-        let batched_ipa_poly = {
-            // X^{b-1} (
-            //  g(X) P_{u_1}(1/X) + g(1/X) P_{u_1}(X) +
-            //  \gamma • (h(X) P_{u_2}(1/X) + h(1/X) P_{u_2}(X))
-            // )
-            let pu1 = UnivariatePolynomial::monomial(
-                MultilinearPolynomial::eq_xy(&point[..t]).into_evals(),
-            );
-            let pu2 = UnivariatePolynomial::monomial(
-                MultilinearPolynomial::eq_xy(&point[t..]).into_evals(),
-            );
+        // IPA polynomial for `˜g(u_1), ˜h(u_2)`
+        // X^{b-1} • (
+        //      g(X) • P_{u_1}(1/X) + g(1/X) • P_{u_1}(X) +
+        //      \gamma • (h(X) • P_{u_2}(1/X) + h(1/X) • P_{u_2}(X))
+        // )
+        let mut batched_ipa_poly = {
+            let omega = root_of_unity(2 * b);
+            // X^{b-1} • ( g(X) • P_{u_1}(1/X) + g(1/X) • P_{u_1}(X) )
+            let mut lhs = {
+                // g(X) • ( X^{b-1} • P_{u_1}(1 / X) ) + ( X^{b-1} • g(1 / X) ) • P_{u_1}(X)
+                let p_u1 = MultilinearPolynomial::eq_xy(&point[..t]).into_evals();
+                // fft ( X^{b-1} • P_{u_1}(1 / X) )
+                let mut p_u1_inv_evals = p_u1.iter().rev().copied().collect_vec();
+                p_u1_inv_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut p_u1_inv_evals, omega, t + 1);
+                // fft ( g(X) )
+                let mut g_evals = g.coeffs().to_vec();
+                g_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut g_evals, omega, t + 1);
+                // fft ( g(X) • ( X^{b-1} • P_{u_1}(1 / X) ) )
+                let g_times_p_u1_inv = izip_eq!(g_evals, p_u1_inv_evals)
+                    .map(|(g_eval, p_u1_inv_eval)| g_eval * p_u1_inv_eval)
+                    .collect_vec();
 
-            
+                // fft ( X^{b-1} • g(1 / X) )
+                let mut g_inv_evals = g.coeffs().iter().rev().copied().collect_vec();
+                g_inv_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut g_inv_evals, omega, t + 1);
+                // fft ( P_{u_1}(X) )
+                let mut p_u1_evals = p_u1.clone();
+                p_u1_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut p_u1_evals, omega, t + 1);
+                // fft ( ( X^{b-1} • g(1 / X) ) • P_{u_1}(X) )
+                let g_inv_times_p_u1 = izip_eq!(g_inv_evals, p_u1_evals)
+                    .map(|(g_inv_eval, p_u1_eval)| g_inv_eval * p_u1_eval)
+                    .collect_vec();
+
+                izip_eq!(g_times_p_u1_inv, g_inv_times_p_u1)
+                    .map(|(a, b)| a + b)
+                    .collect_vec()
+            };
+            // X^{b-1} • ( h(X) • P_{u_2}(1 / X) + h(1 / X) • P_{u_2}(X) )
+            let rhs = {
+                // h(X) • ( X^{b-1} • P_{u_2}(1 / X) ) + ( X^{b-1} • h(1 / X) ) • P_{u_2}(X)
+                let mut p_u2 = MultilinearPolynomial::eq_xy(&point[t..]).into_evals();
+                p_u2.resize(b, M::Fr::ZERO);
+                // fft ( X^{b-1} • P_{u_2}(1 / X) )
+                let mut p_u2_inv_evals = p_u2.iter().rev().copied().collect_vec();
+                p_u2_inv_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut p_u2_inv_evals, omega, t + 1);
+                // fft ( h(X) )
+                let mut h_evals = h.coeffs().to_vec();
+                h_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut h_evals, omega, t + 1);
+                // fft ( h(X) • ( X^{b-1} • P_{u_1}(1 / X) ) )
+                let h_times_p_u1_inv = izip_eq!(h_evals, p_u2_inv_evals)
+                    .map(|(h_eval, p_u2_inv_eval)| h_eval * p_u2_inv_eval)
+                    .collect_vec();
+
+                // fft ( X^{b-1} • h(1 / X) )
+                let mut h_evals = h.coeffs().to_vec();
+                h_evals.resize(b, M::Fr::ZERO);
+                let mut h_inv_evals = h_evals.iter().rev().copied().collect_vec();
+                h_inv_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut h_inv_evals, omega, t + 1);
+                // fft ( P_{u_2}(X) )
+                let mut p_u2_evals = p_u2.clone();
+                p_u2_evals.resize(2 * b, M::Fr::ZERO);
+                radix2_fft(&mut p_u2_evals, omega, t + 1);
+                // fft ( ( X^{b-1} • h(1 / X) ) • P_{u_2}(X) )
+                let h_inv_times_p_u2 = izip_eq!(h_inv_evals, p_u2_evals)
+                    .map(|(h_inv_eval, p_u2_eval)| h_inv_eval * p_u2_eval)
+                    .collect_vec();
+
+                izip_eq!(h_times_p_u1_inv, h_inv_times_p_u2)
+                    .map(|(a, b)| a + b)
+                    .collect_vec()
+            };
+            lhs.iter_mut()
+                .zip(rhs)
+                .for_each(|(lhs, rhs)| *lhs += gamma * rhs);
+            lhs
+        };
+
+        // `batched_ipa_poly` = X^{b-1} • (2(˜g(u_1) + ˜h(u_2)) + X • s(X) + (1 / X) • s(1 / X))
+        let s = {
+            // size `2b` ifft for `batched_ipa_poly`
+            let omega_inv = root_of_unity_inv(t + 1);
+            let n_inv = M::Fr::TWO_INV.pow_vartime([(t + 1) as u64]);
+            radix2_fft(&mut batched_ipa_poly, omega_inv, t + 1);
+            batched_ipa_poly
+                .iter_mut()
+                .for_each(|coeff| *coeff *= n_inv);
+            UnivariatePolynomial::monomial(batched_ipa_poly[b..=2 * b - 2].to_vec())
         };
 
         // degree of `g(X)` <= b
         let d = {
-            let d_coeffs = g.coeffs().iter().rev().collect::<Vec<_>>();
+            let d_coeffs = g.coeffs().iter().rev().copied().collect::<Vec<_>>();
             UnivariatePolynomial::monomial(d_coeffs)
         };
 
         let zeta = transcript.squeeze_challenge();
+
+
 
         todo!()
     }
