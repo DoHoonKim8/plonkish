@@ -24,6 +24,7 @@ pub use kzg::{
 };
 pub use mercury::Mercury;
 pub use zeromorph::{Zeromorph, ZeromorphKzgProverParam, ZeromorphKzgVerifierParam};
+pub use mercury::Mercury;
 
 fn validate_input<'a, F: Field>(
     function: &str,
