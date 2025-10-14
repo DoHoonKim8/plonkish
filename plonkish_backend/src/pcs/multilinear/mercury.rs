@@ -12,8 +12,7 @@ use crate::{
     },
     util::{
         arithmetic::{
-            horner_univariate_div, radix2_fft, root_of_unity, root_of_unity_inv,
-            squares, transpose, Field, MultiMillerLoop,
+            horner_univariate_div, radix2_fft, root_of_unity, root_of_unity_inv, squares, transpose, variable_base_msm, Field, MultiMillerLoop
         },
         izip_eq,
         transcript::{TranscriptRead, TranscriptWrite},
@@ -347,15 +346,19 @@ where
 
         let phi_zeta_comm = transcript.read_commitment()?;
 
+        let zeta_squares = squares(zeta).take(t).collect_vec();
+        let zeta_inv_squares = squares(zeta_inv).take(t).collect_vec();
+        let zeta_pow_to_b = zeta_squares
+            .last()
+            .copied()
+            .map(|zeta_pow| zeta_pow.square())
+            .unwrap();
         let expected_d_zeta = {
-            let zeta_pow = zeta.pow(&[(b - 1) as u64]);
-            zeta_pow * evals[1]
+            zeta_pow_to_b * zeta_inv * evals[1]
         };
         // h(α) = (g(ζ) P_{u_1}(1 / ζ) + g(1 / ζ) P_{u_1}(ζ) + γ • (h(ζ) P_{u_2}(1 / ζ) + h(1 / ζ) P_{u_2}(ζ) - 2 * v)
         //        - ζ * s(ζ) - (1 / ζ) * s(1 / ζ)) / 2
         let expected_h_alpha = {
-            let zeta_squares = squares(zeta).take(t).collect_vec();
-            let zeta_inv_squares = squares(zeta_inv).take(t).collect_vec();
             // P_{u_1}(ζ) = ∏_{i=0}^{t - 1} (u_i * ζ^{2^i} + (1 - u_i))
             let p_u1_zeta = {
                 let mut acc = M::Fr::ONE;
@@ -399,7 +402,7 @@ where
         // first pairing check
         {
             let lhs =
-                comm.0 - (q_comm * (zeta.pow(&[b as u64]) - alpha)).into() - (vp.g1() * evals[0])
+                comm.0 - (q_comm * (zeta_pow_to_b - alpha)).into() - (vp.g1() * evals[0])
                     + phi_zeta_comm * zeta;
             M::pairings_product_is_identity(&[
                 (&lhs.into(), &(-vp.g2()).into()),
