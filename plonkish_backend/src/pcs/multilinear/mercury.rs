@@ -12,10 +12,10 @@ use crate::{
     },
     util::{
         arithmetic::{
-            horner_univariate_div, inner_product, radix2_fft, root_of_unity, root_of_unity_inv,
+            horner_univariate_div, radix2_fft, root_of_unity, root_of_unity_inv,
             squares, transpose, Field, MultiMillerLoop,
         },
-        chain, izip_eq,
+        izip_eq,
         transcript::{TranscriptRead, TranscriptWrite},
         DeserializeOwned, Itertools, Serialize,
     },
@@ -23,7 +23,7 @@ use crate::{
 };
 use halo2_curves::{ff::PrimeField, CurveAffine};
 use rand::RngCore;
-use std::{iter::once, marker::PhantomData, ops::Neg};
+use std::marker::PhantomData;
 
 #[derive(Clone, Debug)]
 pub struct Mercury<Pcs>(PhantomData<Pcs>);
@@ -92,7 +92,7 @@ where
             assert_eq!(poly.evaluate(point), *eval);
         }
 
-        let t = num_vars >> 1 + 1;
+        let t = (num_vars >> 1) + 1;
         let b: usize = 1 << t; // Folding factor
         let f = UnivariatePolynomial::monomial(poly.evals().to_vec());
 
@@ -144,7 +144,7 @@ where
 
         // Commit to `g(X)`, and `q(X)`
         let comms = UnivariateKzg::<M>::batch_commit_and_write(pp, vec![&g, &q], transcript)?;
-        let [g_comm, q_comm] = comms.try_into().unwrap();
+        let [g_comm, _q_comm] = comms.try_into().unwrap();
 
         let gamma = transcript.squeeze_challenge();
 
@@ -154,7 +154,7 @@ where
         //      \gamma • (h(X) • P_{u_2}(1 / X) + h(1 / X) • P_{u_2}(X))
         // )
         let mut batched_ipa_poly = {
-            let omega = root_of_unity(2 * b);
+            let omega = root_of_unity(t + 1);
             // X^{b-1} • ( g(X) • P_{u_1}(1 / X) + g(1 / X) • P_{u_1}(X) )
             let mut lhs = {
                 // g(X) • ( X^{b-1} • P_{u_1}(1 / X) ) + ( X^{b-1} • g(1 / X) ) • P_{u_1}(X)
@@ -270,7 +270,7 @@ where
             Evaluation::new(3, 0, d.evaluate(&zeta)),     // d(ζ)
             Evaluation::new(1, 2, h.evaluate(&alpha)),    // h(α)
         ];
-        transcript.write_field_elements(evals[..5].iter().map(Evaluation::value))?;
+        transcript.write_field_elements(evals[..6].iter().map(Evaluation::value))?;
 
         // [H(x)]
         let phi_zeta = {
@@ -285,7 +285,7 @@ where
             let divisor = UnivariatePolynomial::monomial(vec![-zeta, M::Fr::ONE]); // (X - ζ)
             let (quotient, remainder) = numerator.div_rem(&divisor);
             assert!(remainder.is_empty());
-            UnivariateKzg::commit_monomial(pp, &quotient.coeffs())
+            UnivariateKzg::commit_monomial(pp, quotient.coeffs())
         };
 
         transcript.write_commitment(&phi_zeta.0)?;
@@ -328,7 +328,104 @@ where
         transcript: &mut impl TranscriptRead<Self::CommitmentChunk, M::Fr>,
     ) -> Result<(), Error> {
         let num_vars = point.len();
-        todo!()
+        let t = (num_vars >> 1) + 1;
+        let b: usize = 1 << t; // Folding factor
+
+        let h_comm = transcript.read_commitment()?;
+
+        let alpha = transcript.squeeze_challenge();
+        let [g_comm, q_comm] = transcript.read_commitments(2)?.try_into().unwrap();
+
+        let gamma = transcript.squeeze_challenge();
+        let [s_comm, d_comm] = transcript.read_commitments(2)?.try_into().unwrap();
+
+        let zeta = transcript.squeeze_challenge();
+        let zeta_inv = zeta.invert().unwrap();
+
+        // g(ζ), g(1/ζ), h(ζ), h(1/ζ), s(ζ), s(1/ζ)
+        let evals = transcript.read_field_elements(6)?;
+
+        let phi_zeta_comm = transcript.read_commitment()?;
+
+        let expected_d_zeta = {
+            let zeta_pow = zeta.pow(&[(b - 1) as u64]);
+            zeta_pow * evals[1]
+        };
+        // h(α) = (g(ζ) P_{u_1}(1 / ζ) + g(1 / ζ) P_{u_1}(ζ) + γ • (h(ζ) P_{u_2}(1 / ζ) + h(1 / ζ) P_{u_2}(ζ) - 2 * v)
+        //        - ζ * s(ζ) - (1 / ζ) * s(1 / ζ)) / 2
+        let expected_h_alpha = {
+            let zeta_squares = squares(zeta).take(t).collect_vec();
+            let zeta_inv_squares = squares(zeta_inv).take(t).collect_vec();
+            // P_{u_1}(ζ) = ∏_{i=0}^{t - 1} (u_i * ζ^{2^i} + (1 - u_i))
+            let p_u1_zeta = {
+                let mut acc = M::Fr::ONE;
+                for (i, u_i) in point[..t].iter().enumerate() {
+                    acc *= *u_i * zeta_squares[i] + (M::Fr::ONE - *u_i);
+                }
+                acc
+            };
+            // P_{u_1}(1 / ζ) = ∏_{i=0}^{t - 1} (u_i * (1 / ζ)^{2^i} + (1 - u_i))
+            let p_u1_zeta_inv = {
+                let mut acc = M::Fr::ONE;
+                for (i, u_i) in point[..t].iter().enumerate() {
+                    acc *= *u_i * zeta_inv_squares[i] + (M::Fr::ONE - *u_i);
+                }
+                acc
+            };
+            // P_{u_2}(ζ) = ∏_{i=t}^{n - 1} (u_i * ζ^{2^i} + (1 - u_i))
+            let p_u2_zeta = {
+                let mut acc = M::Fr::ONE;
+                for (i, u_i) in point[t..].iter().enumerate() {
+                    acc *= *u_i * zeta_squares[i] + (M::Fr::ONE - *u_i);
+                }
+                acc
+            };
+            // P_{u_2}(1 / ζ) = ∏_{i=t}^{n - 1} (u_i * (1 / ζ)^{2^i} + (1 - u_i))
+            let p_u2_zeta_inv = {
+                let mut acc = M::Fr::ONE;
+                for (i, u_i) in point[t..].iter().enumerate() {
+                    acc *= *u_i * zeta_inv_squares[i] + (M::Fr::ONE - *u_i);
+                }
+                acc
+            };
+            let acc = evals[0] * p_u1_zeta_inv
+                + evals[1] * p_u1_zeta
+                + gamma
+                    * (evals[2] * p_u2_zeta_inv + evals[3] * p_u2_zeta
+                        - M::Fr::ONE.double() * eval);
+            (acc - zeta * evals[4] - zeta_inv * evals[5]) * M::Fr::TWO_INV
+        };
+
+        // first pairing check
+        {
+            let lhs =
+                comm.0 - (q_comm * (zeta.pow(&[b as u64]) - alpha)).into() - (vp.g1() * evals[0])
+                    + phi_zeta_comm * zeta;
+            M::pairings_product_is_identity(&[
+                (&lhs.into(), &(-vp.g2()).into()),
+                (&phi_zeta_comm, &vp.s_g2().into()),
+            ])
+            .then_some(())
+            .ok_or_else(|| Error::InvalidPcsOpen("Invalid mercury open".to_string()))?;
+        }
+
+        // opening check
+        let comms = vec![g_comm, h_comm, s_comm, d_comm]
+            .into_iter()
+            .map(UnivariateKzgCommitment)
+            .collect_vec();
+        let points = vec![zeta, zeta_inv, alpha];
+        let evals = vec![
+            Evaluation::new(0, 0, evals[0]),         // g(ζ)
+            Evaluation::new(0, 1, evals[1]),         // g(1/ζ)
+            Evaluation::new(1, 0, evals[2]),         // h(ζ)
+            Evaluation::new(1, 1, evals[3]),         // h(1/ζ)
+            Evaluation::new(2, 0, evals[4]),         // s(ζ)
+            Evaluation::new(2, 1, evals[5]),         // s(1/ζ)
+            Evaluation::new(3, 0, expected_d_zeta),  // d(ζ)
+            Evaluation::new(1, 2, expected_h_alpha), // h(α)
+        ];
+        UnivariateKzg::batch_verify(vp, &comms, &points, &evals, transcript)
     }
 
     fn batch_verify<'a>(
