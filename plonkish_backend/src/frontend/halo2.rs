@@ -91,6 +91,8 @@ impl<F: Field, C: CircuitExt<F>> Halo2Circuit<F, C> {
             (cs, config)
         };
         let constants = cs.constants().clone();
+        // for mv-lookup compatibility
+        let cs = cs.chunk_lookups();
 
         let num_witness_polys = num_by_phase(&cs.advice_column_phase());
         let advice_idx_in_phase = idx_in_phase(&cs.advice_column_phase());
