@@ -76,6 +76,28 @@ where
     pub(crate) permutation_comms: Vec<(usize, Pcs::Commitment)>,
 }
 
+impl<F, Pcs> HyperPlonkVerifierParam<F, Pcs>
+where
+    F: PrimeField,
+    Pcs: PolynomialCommitmentScheme<F>,
+{
+    pub fn preprocess_comms(&self) -> &[Pcs::Commitment] {
+        &self.preprocess_comms
+    }
+
+    pub fn permutation_comms(&self) -> Vec<Pcs::Commitment> {
+        self.permutation_comms.iter().map(|(_, comm)| comm).cloned().collect_vec()
+    }
+
+    pub fn expression(&self) -> &Expression<F> {
+        &self.expression
+    }
+
+    pub fn pcs(&self) -> &Pcs::VerifierParam {
+        &self.pcs
+    }
+}
+
 impl<F, Pcs> PlonkishBackend<F> for HyperPlonk<Pcs>
 where
     F: PrimeField + Hash + Serialize + DeserializeOwned,

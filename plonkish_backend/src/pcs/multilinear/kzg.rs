@@ -18,7 +18,6 @@ use crate::{
     Error,
 };
 use halo2_curves::serde::SerdeObject;
-use halo2_proofs::SerdeCurveAffine;
 use pasta_curves::group::prime::PrimeCurveAffine;
 use rand::RngCore;
 use std::{iter, marker::PhantomData, ops::Neg, slice};
@@ -107,8 +106,8 @@ where
 impl<M> SerdeParam for MultilinearKzgProverParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.g1.write_raw(writer)?;
@@ -179,8 +178,8 @@ where
 impl<M> SerdeParam for MultilinearKzgVerifierParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.g1.write_raw(writer)?;
@@ -209,7 +208,7 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MultilinearKzgCommitment<C: CurveAffine>(pub C);
 
-impl<C: SerdeCurveAffine> SerdeObject for MultilinearKzgCommitment<C> {
+impl<C: CurveAffine + SerdeObject> SerdeObject for MultilinearKzgCommitment<C> {
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.0.write_raw(writer)
     }

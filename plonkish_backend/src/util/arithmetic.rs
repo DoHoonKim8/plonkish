@@ -177,6 +177,19 @@ pub fn barycentric_interpolate<F: Field>(weights: &[F], points: &[F], evals: &[F
     inner_product(&coeffs, evals) * &sum_inv
 }
 
+pub fn barycentric_interpolate_evm<F: Field>(weights: &[F], points: &[F], evals: &[F], x: &F) -> (F, F) {
+    let (coeffs, sum_inv) = {
+        let mut coeffs = points.iter().map(|point| *x - point).collect_vec();
+        coeffs.batch_invert();
+        coeffs.iter_mut().zip(weights).for_each(|(coeff, weight)| {
+            *coeff *= weight;
+        });
+        let sum_inv = coeffs.iter().fold(F::ZERO, |sum, coeff| sum + coeff);
+        (coeffs, sum_inv.invert().unwrap())
+    };
+    (inner_product(&coeffs, evals), sum_inv)
+}
+
 pub fn modulus<F: PrimeField>() -> BigUint {
     BigUint::from_bytes_le((-F::ONE).to_repr().as_ref()) + 1u64
 }

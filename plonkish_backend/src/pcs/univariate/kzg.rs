@@ -17,7 +17,6 @@ use crate::{
     Error,
 };
 use halo2_curves::serde::SerdeObject;
-use halo2_proofs::SerdeCurveAffine;
 use pasta_curves::group::prime::PrimeCurveAffine;
 use rand::RngCore;
 use std::{marker::PhantomData, ops::Neg, slice};
@@ -158,8 +157,8 @@ where
 impl<M> SerdeParam for UnivariateKzgProverParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         let k_bytes = (self.k as u32).to_le_bytes();
@@ -239,8 +238,8 @@ where
 impl<M> SerdeParam for UnivariateKzgVerifierParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.g1.write_raw(writer)?;
@@ -260,7 +259,7 @@ where
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UnivariateKzgCommitment<C: CurveAffine>(pub C);
 
-impl<C: SerdeCurveAffine> SerdeObject for UnivariateKzgCommitment<C> {
+impl<C: CurveAffine + SerdeObject> SerdeObject for UnivariateKzgCommitment<C> {
     fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
         C::from_raw_bytes(bytes).map(UnivariateKzgCommitment)
     }

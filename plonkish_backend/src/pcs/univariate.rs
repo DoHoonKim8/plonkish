@@ -83,18 +83,11 @@ fn err_invalid_evals_len(expected: usize, got: usize) -> Error {
 
 mod additive {
     use crate::{
-        pcs::{Additive, Evaluation, Point, PolynomialCommitmentScheme},
-        poly::univariate::UnivariatePolynomial,
-        util::{
-            arithmetic::{
-                barycentric_interpolate, barycentric_weights, fe_to_bytes, inner_product, powers,
-                Field, PrimeField,
-            },
-            chain, izip, izip_eq,
-            transcript::{TranscriptRead, TranscriptWrite},
-            Itertools,
-        },
-        Error,
+        Error, pcs::{Additive, Evaluation, Point, PolynomialCommitmentScheme}, poly::univariate::UnivariatePolynomial, util::{
+            Itertools, arithmetic::{
+                Field, PrimeField, barycentric_interpolate, barycentric_interpolate_evm, barycentric_weights, fe_to_bytes, inner_product, powers
+            }, chain, izip, izip_eq, transcript::{TranscriptRead, TranscriptWrite}
+        }
     };
     use std::collections::BTreeSet;
 
@@ -147,6 +140,11 @@ mod additive {
         let z = transcript.squeeze_challenge();
 
         let (normalized_scalars, normalizer) = set_scalars(&sets, &powers_of_gamma, points, &z);
+        let normalized_scalars = normalized_scalars
+            .iter()
+            .zip(powers_of_gamma.iter())
+            .map(|(scalar, power_of_gamma)| *scalar * power_of_gamma)
+            .collect_vec();
         let superset_eval = vanishing_eval(superset.iter().map(|idx| &points[*idx]), &z);
         let q_scalar = -superset_eval * normalizer;
         let f = {
@@ -192,6 +190,33 @@ mod additive {
         let powers_of_gamma = powers(gamma).take(sets.len()).collect_vec();
 
         let (normalized_scalars, normalizer) = set_scalars(&sets, &powers_of_gamma, points, &z);
+        println!("normalizer: {:?}", normalizer); // --- IGNORE ---
+        println!("normalized_scalars: {:?}", normalized_scalars); // --- IGNORE ---
+        let (eval_evm, sum_invs) = sets
+            .iter()
+            .zip(normalized_scalars.iter())
+            .map(|(set, scalar)| {
+                let (r_eval, sum_inv) = set.r_eval_evm(points, &z, &powers_of_beta);
+                (*scalar * r_eval, sum_inv)
+            })
+            .collect_vec()
+            .into_iter()
+            .unzip::<_, _, Vec<_>, Vec<_>>();
+        let eval_evm = eval_evm
+            .iter()
+            .zip(sum_invs.iter())
+            .map(|(eval, sum_inv)| *eval * sum_inv)
+            .collect_vec();
+        let mut l_prime_z = inner_product(
+            &powers_of_gamma,
+            eval_evm.iter(),
+        );
+
+        let normalized_scalars = normalized_scalars
+            .iter()
+            .zip(powers_of_gamma.iter())
+            .map(|(scalar, power_of_gamma)| *scalar * power_of_gamma)
+            .collect_vec();
         let f = {
             let scalars = comm_scalars(comms.len(), &sets, &powers_of_beta, &normalized_scalars);
             let superset_eval = vanishing_eval(superset.iter().map(|idx| &points[*idx]), &z);
@@ -205,6 +230,7 @@ mod additive {
                 .map(|set| set.r_eval(points, &z, &powers_of_beta))
                 .collect_vec(),
         );
+        println!("eval: {:?}", eval); // --- IGNORE ---
         Pcs::verify(vp, &f, &z, &eval, transcript)
     }
 
@@ -224,6 +250,13 @@ mod additive {
                 .fold(F::ONE, |eval, point| eval * (*z - point))
         }
 
+        fn vanishing_eval(&self, points: &[F], z: &F) -> F {
+            self.points
+                .iter()
+                .map(|idx| points[*idx])
+                .fold(F::ONE, |eval, point| eval * (*z - point))
+        }
+
         fn vanishing_poly(&self, points: &[F]) -> UnivariatePolynomial<F> {
             UnivariatePolynomial::vanishing(self.points.iter().map(|point| &points[*point]), F::ONE)
         }
@@ -237,6 +270,19 @@ mod additive {
                 .map(|evals| barycentric_interpolate(&weights, &points, evals, z))
                 .collect_vec();
             inner_product(&powers_of_beta[..r_evals.len()], &r_evals)
+        }
+
+        fn r_eval_evm(&self, points: &[F], z: &F, powers_of_beta: &[F]) -> (F, F) {
+            let points = self.points.iter().map(|idx| points[*idx]).collect_vec();
+            let weights = barycentric_weights(&points);
+            let (r_evals, sum_invs): (Vec<_>, Vec<_>) = self
+                .evals
+                .iter()
+                .map(|evals| barycentric_interpolate_evm(&weights, &points, evals, z))
+                .collect_vec()
+                .into_iter()
+                .unzip();
+            (inner_product(&powers_of_beta[..r_evals.len()], &r_evals), sum_invs[0])
         }
     }
 
@@ -315,7 +361,7 @@ mod additive {
         let normalizer = vanishing_diff_evals[0].invert().unwrap_or(F::ONE);
         let normalized_scalars = izip_eq!(powers_of_gamma, &vanishing_diff_evals)
             .map(|(power_of_gamma, vanishing_diff_eval)| {
-                normalizer * vanishing_diff_eval * power_of_gamma
+                normalizer * vanishing_diff_eval
             })
             .collect_vec();
         (normalized_scalars, normalizer)

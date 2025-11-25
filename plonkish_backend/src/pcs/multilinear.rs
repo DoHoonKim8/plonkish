@@ -268,11 +268,18 @@ mod additive {
         let t = transcript.squeeze_challenges(ell);
 
         let eq_xt = MultilinearPolynomial::eq_xy(&t);
+        // ∑_{i \in [k]} y_i • eq(t, <i>)
         let tilde_gs_sum =
             inner_product(evals.iter().map(Evaluation::value), &eq_xt[..evals.len()]);
+        // reduce only µ-rounds of Sumcheck
+        // g'(r_1, ..., r_µ)
+        // = ∑_{b' ∈ {0,1}^l} ˜g(r_1, ..., r_µ || b') • ˜eq(r_1, ..., r_µ || b')
+        // = ∑_{b' ∈ {0,1}^l} (eq(t, b') • f_i(r_1, ..., r_µ)) • (eq(r_1, ..., r_µ || z_i))
+        // = G
         let (g_prime_eval, challenges) =
             SumCheck::verify(&(), num_vars, 2, tilde_gs_sum, transcript)?;
 
+        // eq(r_1, ..., r_µ || z_i)
         let eq_xy_evals = points
             .iter()
             .map(|point| eq_xy_eval(&challenges, point))

@@ -56,6 +56,8 @@ pub(crate) fn verify_sum_check<F: PrimeField>(
         transcript,
     )?;
 
+    println!("Sum check x: {:?}", x);
+
     let pcs_query = pcs_query(expression, instances.len());
     let (evals_for_rotation, evals) = pcs_query
         .iter()
@@ -68,6 +70,13 @@ pub(crate) fn verify_sum_check<F: PrimeField>(
         .try_collect::<_, Vec<_>, _>()?
         .into_iter()
         .unzip::<_, _, Vec<_>, Vec<_>>();
+
+    let instance_eval = instance_evals::<F, BinaryField>(
+        num_vars,
+        expression,
+        instances,
+        &x,
+    );
 
     let evals = instance_evals::<_, BinaryField>(num_vars, expression, instances, &x)
         .into_iter()

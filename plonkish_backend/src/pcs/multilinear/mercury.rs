@@ -18,6 +18,7 @@ use crate::{
     Error,
 };
 use halo2_curves::{ff::PrimeField, CurveAffine};
+use pasta_curves::group::Curve;
 use rand::RngCore;
 use std::marker::PhantomData;
 

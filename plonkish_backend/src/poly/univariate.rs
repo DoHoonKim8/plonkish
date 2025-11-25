@@ -118,7 +118,7 @@ impl<F: Field> UnivariatePolynomial<F> {
             basis: Monomial,
             coeffs,
         };
-        poly.truncate_leading_zeros();
+        // poly.truncate_leading_zeros();
         poly
     }
 

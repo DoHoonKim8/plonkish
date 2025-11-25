@@ -10,7 +10,8 @@ use crate::{
         BitIndex, Deserialize, Itertools, Serialize,
     },
 };
-use halo2_proofs::{SerdeFormat, SerdePrimeField};
+use halo2_curves::{ff::PrimeField, serde::SerdeObject};
+use halo2_proofs::SerdeFormat;
 use num_integer::Integer;
 use rand::RngCore;
 use std::{
@@ -33,21 +34,19 @@ impl<F> Default for MultilinearPolynomial<F> {
     }
 }
 
-pub(crate) fn write_polynomial_slice<W: io::Write, F: SerdePrimeField>(
+pub(crate) fn write_polynomial_slice<W: io::Write, F: PrimeField + SerdeObject>(
     slice: &[MultilinearPolynomial<F>],
     writer: &mut W,
-    format: SerdeFormat,
 ) -> io::Result<()> {
     writer.write_all(&(slice.len() as u32).to_be_bytes())?;
     for poly in slice.iter() {
-        poly.write(writer, format)?;
+        poly.write(writer)?;
     }
     Ok(())
 }
 
-pub(crate) fn read_polynomial_vec<R: io::Read, F: SerdePrimeField>(
+pub(crate) fn read_polynomial_vec<R: io::Read, F: PrimeField + SerdeObject>(
     reader: &mut R,
-    format: SerdeFormat,
 ) -> io::Result<Vec<MultilinearPolynomial<F>>> {
     let mut len = [0u8; 4];
     reader.read_exact(&mut len)?;
@@ -55,26 +54,25 @@ pub(crate) fn read_polynomial_vec<R: io::Read, F: SerdePrimeField>(
 
     let mut polys = Vec::with_capacity(len as usize);
     for _ in 0..len {
-        polys.push(MultilinearPolynomial::read(reader, format)?);
+        polys.push(MultilinearPolynomial::read(reader)?);
     }
     Ok(polys)
 }
 
-impl<F: SerdePrimeField> MultilinearPolynomial<F> {
+impl<F: PrimeField + SerdeObject> MultilinearPolynomial<F> {
     pub(crate) fn write<W: io::Write>(
         &self,
         writer: &mut W,
-        format: SerdeFormat,
     ) -> io::Result<()> {
         writer.write_all(&(self.num_vars as u32).to_be_bytes())?;
         writer.write_all(&(self.evals.len() as u32).to_be_bytes())?;
         for eval in &self.evals {
-            eval.write(writer, format)?;
+            eval.write_raw(writer)?;
         }
         Ok(())
     }
 
-    pub(crate) fn read<W: io::Read>(reader: &mut W, format: SerdeFormat) -> io::Result<Self> {
+    pub(crate) fn read<W: io::Read>(reader: &mut W) -> io::Result<Self> {
         let mut num_vars = [0u8; 4];
         reader.read_exact(&mut num_vars)?;
         let num_vars = u32::from_be_bytes(num_vars) as usize;
@@ -86,7 +84,7 @@ impl<F: SerdePrimeField> MultilinearPolynomial<F> {
 
         let mut evals = vec![F::ZERO; len];
         for eval in evals.iter_mut() {
-            *eval = F::read(reader, format)?;
+            *eval = F::read_raw(reader)?;
         }
 
         Ok(Self { evals, num_vars })
@@ -645,6 +643,27 @@ pub(crate) fn rotation_eval_coeff_pattern<const NEXT: bool>(
     num_vars: usize,
     distance: usize,
 ) -> Vec<usize> {
+    // GF(2^3)
+    // primitive polynomial = 1 + x + x^3 (1, 1, 0, 1)
+    // x_inv = 1 + x^2 (1, 0, 1)
+    // num_vars = 3
+    // distance = 2
+    // remainder = (0, 0, 1, 0, 1)
+    // element = (b_0, b_1, b_2) -> b_0 + b_1 * x + b_2 * x^2
+    // first iteration (depth = 0):
+    // - (b_1, b_2, 0)
+    // - (b_1, b_2, 0) + (0, 0, b_0, 0, b_0) = (b_1, b_2, b_0, 0, b_0)
+    // second iteration (depth = 1):
+    // - (b_2, b_0, 0, b_0, 0) + (0, 0, b_1, 0, b_1) = (b_2, b_0, b_1, b_0, b_1)
+
+    // (b_0, b_1, b_2)
+    // (b_1, b_2, 0) + (b_0, 0, b_0) = (b_1 + b_0, b_2, b_0)
+    // (b_2, b_0, 0) + (b_1 + b_0, 0, b_1 + b_0) = (b_2 + b_1 + b_0, b_0, b_1 + b_0)
+    // f''(b_0, b_1, b_2)
+    // = b_0 * f'(b_1, b_2, 0)
+    // + (1 - b_0) * f'(b_1 + 1, b_2, 1)
+    // = b_0 * (b_1 * f(b_2, 0, 0) + (1 - b_1) * f(b_2 + 1, 1, 1))
+    // + (1 - b_0) * ((b_1 + 1) * f(b_2, 0, 0) + b_1 * f(b_2 + 1, 0, 1))
     let bf = BinaryField::new(num_vars);
     let remainder = if NEXT {
         bf.primitive() - (1 << num_vars)
@@ -693,6 +712,10 @@ fn merge_in_place<F: Field>(
     }
 }
 
+// Given evaluations of a multilinear polynomial over n variables,
+// merge evaluations by fixing one variable to x_i.
+// The variable to be fixed is `distance`-th variable.
+// The evaluations to be merged start from `skip`-th evaluation.
 pub(crate) fn merge_into<F: Field>(
     target: &mut Vec<F>,
     evals: &[F],

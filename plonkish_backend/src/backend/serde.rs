@@ -10,7 +10,7 @@ use crate::{
     backend::hyperplonk::{HyperPlonkProverParam, HyperPlonkVerifierParam},
     pcs::PolynomialCommitmentScheme,
     poly::multilinear::{read_polynomial_vec, write_polynomial_slice, MultilinearPolynomial},
-    util::{expression::Expression, SerdeFormat, SerdePrimeField},
+    util::{expression::Expression, SerdeFormat},
 };
 
 fn write_expression<W: io::Write, F: Serialize + DeserializeOwned>(
@@ -57,7 +57,7 @@ where
 
 impl<F, Pcs> HyperPlonkProvingKey<F, Pcs>
 where
-    F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
+    F: PrimeField + SerdeObject + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
 {
@@ -65,12 +65,12 @@ where
         // Write vk
         self.vk.write(writer)?;
         // Write preprocess_polys
-        write_polynomial_slice(&self.preprocess_polys, writer, SerdeFormat::RawBytes)?;
+        write_polynomial_slice(&self.preprocess_polys, writer)?;
         writer.write_all(&(self.permutation_polys.len() as u32).to_le_bytes())?;
         // Write permutation_polys
         for (idx, poly) in &self.permutation_polys {
             writer.write_all(&(*idx as u32).to_le_bytes())?;
-            poly.write(writer, SerdeFormat::RawBytes)?;
+            poly.write(writer)?;
         }
         Ok(())
     }
@@ -79,7 +79,7 @@ where
         // Read vk
         let vk = HyperPlonkVerifyingKey::read(reader)?;
         // Read preprocess_polys
-        let preprocess_polys = read_polynomial_vec(reader, SerdeFormat::RawBytes)?;
+        let preprocess_polys = read_polynomial_vec(reader)?;
         // Read permutation_comms
         let mut len_bytes = [0u8; 4];
         reader.read_exact(&mut len_bytes)?;
@@ -89,7 +89,7 @@ where
             let mut poly_idx_bytes = [0u8; 4];
             reader.read_exact(&mut poly_idx_bytes)?;
             let poly_idx = u32::from_le_bytes(poly_idx_bytes) as usize;
-            let poly = MultilinearPolynomial::read(reader, SerdeFormat::RawBytes)?;
+            let poly = MultilinearPolynomial::read(reader)?;
             permutation_polys.push((poly_idx, poly));
         }
         Ok(Self {
@@ -102,7 +102,7 @@ where
 
 impl<F, Pcs> HyperPlonkProverParam<F, Pcs>
 where
-    F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
+    F: PrimeField + SerdeObject + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
     Pcs::ProverParam: SerdeParam,
@@ -229,7 +229,7 @@ where
 
 impl<F, Pcs> HyperPlonkVerifyingKey<F, Pcs>
 where
-    F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
+    F: PrimeField + SerdeObject + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
 {
@@ -365,7 +365,7 @@ where
 
 impl<F, Pcs> HyperPlonkVerifierParam<F, Pcs>
 where
-    F: PrimeField + SerdePrimeField + FromUniformBytes<64> + Serialize + DeserializeOwned,
+    F: PrimeField + SerdeObject + FromUniformBytes<64> + Serialize + DeserializeOwned,
     Pcs: PolynomialCommitmentScheme<F>,
     Pcs::Commitment: SerdeObject,
     Pcs::VerifierParam: SerdeParam,

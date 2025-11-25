@@ -6,7 +6,7 @@ pub mod parallel;
 mod timer;
 pub mod transcript;
 
-pub use halo2_proofs::{SerdeCurveAffine, SerdeFormat, SerdePrimeField};
+pub use halo2_proofs::SerdeFormat;
 pub use itertools::{chain, izip, Either, Itertools};
 pub use num_bigint::BigUint;
 pub use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize, Serializer};

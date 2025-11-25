@@ -21,7 +21,6 @@ use crate::{
     Error,
 };
 use halo2_curves::{serde::SerdeObject, CurveAffine};
-use halo2_proofs::SerdeCurveAffine;
 use rand::RngCore;
 use std::marker::PhantomData;
 
@@ -57,8 +56,8 @@ where
 impl<M> SerdeParam for ZeromorphKzgProverParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.commit_pp.write_param(writer)?;
@@ -108,8 +107,8 @@ where
 impl<M> SerdeParam for ZeromorphKzgVerifierParam<M>
 where
     M: MultiMillerLoop,
-    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
-    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeCurveAffine,
+    M::G1Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
+    M::G2Affine: CurveAffine<ScalarExt = M::Fr> + SerdeObject,
 {
     fn write_param<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
         self.vp.write_param(writer)?;
