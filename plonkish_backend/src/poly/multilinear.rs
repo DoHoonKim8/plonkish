@@ -60,10 +60,7 @@ pub(crate) fn read_polynomial_vec<R: io::Read, F: PrimeField + SerdeObject>(
 }
 
 impl<F: PrimeField + SerdeObject> MultilinearPolynomial<F> {
-    pub(crate) fn write<W: io::Write>(
-        &self,
-        writer: &mut W,
-    ) -> io::Result<()> {
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
         writer.write_all(&(self.num_vars as u32).to_be_bytes())?;
         writer.write_all(&(self.evals.len() as u32).to_be_bytes())?;
         for eval in &self.evals {

@@ -177,7 +177,12 @@ pub fn barycentric_interpolate<F: Field>(weights: &[F], points: &[F], evals: &[F
     inner_product(&coeffs, evals) * &sum_inv
 }
 
-pub fn barycentric_interpolate_evm<F: Field>(weights: &[F], points: &[F], evals: &[F], x: &F) -> (F, F) {
+pub fn barycentric_interpolate_evm<F: Field>(
+    weights: &[F],
+    points: &[F],
+    evals: &[F],
+    x: &F,
+) -> (F, F) {
     let (coeffs, sum_inv) = {
         let mut coeffs = points.iter().map(|point| *x - point).collect_vec();
         coeffs.batch_invert();

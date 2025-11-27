@@ -71,12 +71,7 @@ pub(crate) fn verify_sum_check<F: PrimeField>(
         .into_iter()
         .unzip::<_, _, Vec<_>, Vec<_>>();
 
-    let instance_eval = instance_evals::<F, BinaryField>(
-        num_vars,
-        expression,
-        instances,
-        &x,
-    );
+    let instance_eval = instance_evals::<F, BinaryField>(num_vars, expression, instances, &x);
 
     let evals = instance_evals::<_, BinaryField>(num_vars, expression, instances, &x)
         .into_iter()

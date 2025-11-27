@@ -12,8 +12,13 @@ use crate::{
     },
     util::{
         arithmetic::{
-            horner_univariate_div, radix2_fft, root_of_unity, root_of_unity_inv, squares, transpose, variable_base_msm, Field, MultiMillerLoop
-        }, izip_eq, parallel::parallelize, transcript::{TranscriptRead, TranscriptWrite}, DeserializeOwned, Itertools, Serialize
+            horner_univariate_div, radix2_fft, root_of_unity, root_of_unity_inv, squares,
+            transpose, variable_base_msm, Field, MultiMillerLoop,
+        },
+        izip_eq,
+        parallel::parallelize,
+        transcript::{TranscriptRead, TranscriptWrite},
+        DeserializeOwned, Itertools, Serialize,
     },
     Error,
 };
@@ -342,9 +347,7 @@ where
             .copied()
             .map(|zeta_pow| zeta_pow.square())
             .unwrap();
-        let expected_d_zeta = {
-            zeta_pow_to_b * zeta_inv * evals[1]
-        };
+        let expected_d_zeta = { zeta_pow_to_b * zeta_inv * evals[1] };
         // h(α) = (g(ζ) P_{u_1}(1 / ζ) + g(1 / ζ) P_{u_1}(ζ) + γ • (h(ζ) P_{u_2}(1 / ζ) + h(1 / ζ) P_{u_2}(ζ) - 2 * v)
         //        - ζ * s(ζ) - (1 / ζ) * s(1 / ζ)) / 2
         let expected_h_alpha = {

@@ -83,11 +83,18 @@ fn err_invalid_evals_len(expected: usize, got: usize) -> Error {
 
 mod additive {
     use crate::{
-        Error, pcs::{Additive, Evaluation, Point, PolynomialCommitmentScheme}, poly::univariate::UnivariatePolynomial, util::{
-            Itertools, arithmetic::{
-                Field, PrimeField, barycentric_interpolate, barycentric_interpolate_evm, barycentric_weights, fe_to_bytes, inner_product, powers
-            }, chain, izip, izip_eq, transcript::{TranscriptRead, TranscriptWrite}
-        }
+        pcs::{Additive, Evaluation, Point, PolynomialCommitmentScheme},
+        poly::univariate::UnivariatePolynomial,
+        util::{
+            arithmetic::{
+                barycentric_interpolate, barycentric_interpolate_evm, barycentric_weights,
+                fe_to_bytes, inner_product, powers, Field, PrimeField,
+            },
+            chain, izip, izip_eq,
+            transcript::{TranscriptRead, TranscriptWrite},
+            Itertools,
+        },
+        Error,
     };
     use std::collections::BTreeSet;
 
@@ -207,10 +214,7 @@ mod additive {
             .zip(sum_invs.iter())
             .map(|(eval, sum_inv)| *eval * sum_inv)
             .collect_vec();
-        let mut l_prime_z = inner_product(
-            &powers_of_gamma,
-            eval_evm.iter(),
-        );
+        let mut l_prime_z = inner_product(&powers_of_gamma, eval_evm.iter());
 
         let normalized_scalars = normalized_scalars
             .iter()
@@ -282,7 +286,10 @@ mod additive {
                 .collect_vec()
                 .into_iter()
                 .unzip();
-            (inner_product(&powers_of_beta[..r_evals.len()], &r_evals), sum_invs[0])
+            (
+                inner_product(&powers_of_beta[..r_evals.len()], &r_evals),
+                sum_invs[0],
+            )
         }
     }
 
@@ -360,9 +367,7 @@ mod additive {
         // to save 1 EC scalar multiplication for verifier.
         let normalizer = vanishing_diff_evals[0].invert().unwrap_or(F::ONE);
         let normalized_scalars = izip_eq!(powers_of_gamma, &vanishing_diff_evals)
-            .map(|(power_of_gamma, vanishing_diff_eval)| {
-                normalizer * vanishing_diff_eval
-            })
+            .map(|(power_of_gamma, vanishing_diff_eval)| normalizer * vanishing_diff_eval)
             .collect_vec();
         (normalized_scalars, normalizer)
     }

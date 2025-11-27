@@ -86,7 +86,11 @@ where
     }
 
     pub fn permutation_comms(&self) -> Vec<Pcs::Commitment> {
-        self.permutation_comms.iter().map(|(_, comm)| comm).cloned().collect_vec()
+        self.permutation_comms
+            .iter()
+            .map(|(_, comm)| comm)
+            .cloned()
+            .collect_vec()
     }
 
     pub fn expression(&self) -> &Expression<F> {
