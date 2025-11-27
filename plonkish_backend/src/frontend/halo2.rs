@@ -95,7 +95,6 @@ impl<F: Field, C: CircuitExt<F>> Halo2Circuit<F, C> {
         let cs = cs.chunk_lookups();
 
         let num_witness_polys = num_by_phase(&cs.advice_column_phase());
-        let advice_idx_in_phase = idx_in_phase(&cs.advice_column_phase());
         let challenge_idx = idx_order_by_phase(&cs.challenge_phase(), 0);
         let row_mapping = E::row_mapping(k);
 
@@ -107,7 +106,6 @@ impl<F: Field, C: CircuitExt<F>> Halo2Circuit<F, C> {
             config,
             constants,
             num_witness_polys,
-            advice_idx_in_phase,
             challenge_idx,
             row_mapping,
         }
